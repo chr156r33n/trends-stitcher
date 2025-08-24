@@ -88,11 +88,12 @@ class TrendsFetcher:
         q = ",".join(terms)  # comma-separated
         self._log_debug(f"Query string: {q}")
         
+        # Try with 'date' parameter first (SerpAPI standard)
         params = {
             "engine": "google_trends",
             "q": q,
             "data_type": "TIMESERIES",
-            "time": self.timeframe,
+            "date": self.timeframe,
             "api_key": self.key,
         }
         if self.geo:
@@ -129,6 +130,13 @@ class TrendsFetcher:
                         self._log_debug(f"interest_over_time keys: {list(io_data.keys())}")
                     elif isinstance(io_data, list) and len(io_data) > 0:
                         self._log_debug(f"First interest_over_time item: {io_data[0]}")
+                
+                # Check if SerpAPI overrode our parameters
+                if isinstance(data, dict) and 'search_parameters' in data:
+                    search_params = data['search_parameters']
+                    self._log_debug(f"SerpAPI search parameters: {search_params}")
+                    if 'date' in search_params and search_params['date'] != self.timeframe:
+                        self._log_debug(f"⚠️ WARNING: SerpAPI overrode timeframe from '{self.timeframe}' to '{search_params['date']}'")
                         
             except requests.exceptions.RequestException as e:
                 msg = f"Network error: {e}; status={getattr(e.response, 'status_code', 'N/A')}"
@@ -183,7 +191,7 @@ class TrendsFetcher:
                     "engine": "google_trends",
                     "q": q_format,
                     "data_type": "TIMESERIES",
-                    "time": self.timeframe,
+                    "date": self.timeframe,  # Use 'date' parameter
                     "api_key": self.key,
                 }
                 if self.geo:

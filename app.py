@@ -155,7 +155,8 @@ with st.sidebar:
     st.info("📊 **Timeframe Guide**:\n"
             "• **1-m to 12-m**: Good for recent trends\n"
             "• **5-y to 20-y**: Better for YoY analysis and historical patterns\n"
-            "• **Longer timeframes** = More data available for date filtering")
+            "• **Longer timeframes** = More data available for date filtering\n"
+            "• **Note**: SerpAPI may limit or override certain timeframes")
     
     # Add button to set maximum timeframe for date filtering
     if start_date or end_date:
@@ -163,6 +164,9 @@ with st.sidebar:
             st.session_state.timeframe = "today 20-y"
             st.success("Set timeframe to maximum (20 years) for better date filtering!")
             st.rerun()
+    
+    # Add note about SerpAPI limitations
+    st.info("⚠️ **SerpAPI Limitation**: If you're still getting limited date ranges, SerpAPI may be overriding your timeframe. Use the '🔍 Test SerpAPI Timeframes' button to check what's actually supported.")
 
     st.markdown("---")
     st.subheader("Chart options")
@@ -219,6 +223,13 @@ with st.sidebar:
         st.subheader("YoY Calculation Test")
         test_yoy_calculation()
     
+    # Add SerpAPI timeframe test button
+    if st.button("🔍 Test SerpAPI Timeframes"):
+        if serpapi_key:
+            test_serpapi_timeframes(serpapi_key)
+        else:
+            st.error("Please enter your SerpAPI key first.")
+    
     # Add import test button
     if st.button("🔧 Test Imports"):
         st.subheader("Import Test")
@@ -249,6 +260,60 @@ with st.sidebar:
         except Exception as e:
             st.error(f"❌ Import test failed: {e}")
             st.code(traceback.format_exc())
+
+def test_serpapi_timeframes(api_key: str):
+    """Test different SerpAPI timeframes to see what data ranges they actually return"""
+    import requests
+    
+    test_timeframes = [
+        "today 1-m",
+        "today 3-m", 
+        "today 12-m",
+        "today 5-y",
+        "today 10-y",
+        "today 20-y"
+    ]
+    
+    st.subheader("🔍 SerpAPI Timeframe Test")
+    st.write("Testing what data ranges different timeframes actually return...")
+    
+    for tf in test_timeframes:
+        try:
+            params = {
+                "engine": "google_trends",
+                "q": "nike",  # Single term for testing
+                "data_type": "TIMESERIES",
+                "date": tf,
+                "api_key": api_key,
+            }
+            
+            r = requests.get("https://serpapi.com/search", params=params, timeout=30)
+            if r.status_code == 200:
+                data = r.json()
+                
+                # Check what SerpAPI actually used
+                actual_timeframe = "Unknown"
+                if 'search_parameters' in data and 'date' in data['search_parameters']:
+                    actual_timeframe = data['search_parameters']['date']
+                
+                # Get date range from data
+                date_range = "No data"
+                if 'interest_over_time' in data:
+                    io_data = data['interest_over_time']
+                    if isinstance(io_data, dict) and 'timeline_data' in io_data:
+                        timeline = io_data['timeline_data']
+                        if timeline and len(timeline) > 0:
+                            first_date = timeline[0].get('date', 'Unknown')
+                            last_date = timeline[-1].get('date', 'Unknown')
+                            date_range = f"{first_date} to {last_date}"
+                
+                st.write(f"**{tf}**: SerpAPI used '{actual_timeframe}', Data: {date_range}")
+                
+            else:
+                st.write(f"**{tf}**: HTTP {r.status_code}")
+                
+        except Exception as e:
+            st.write(f"**{tf}**: Error - {str(e)}")
 
 def test_yoy_calculation():
     """Test function to verify YoY calculation"""
