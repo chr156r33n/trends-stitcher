@@ -6,7 +6,7 @@ import streamlit as st
 import altair as alt
 from dotenv import load_dotenv
 
-from trends_stitcher import stitch_terms
+from stitcher import stitch_terms
 
 load_dotenv()
 
