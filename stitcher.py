@@ -401,7 +401,15 @@ def stitch_terms(
     if verbose:
         print("[stitch_terms] Computing pairwise ratios")
     pw = pairwise_ratios(df_long)
-    if verbose:
+    if pw.empty:
+        msg = "No overlapping data found; default scale of 1 used."
+        try:  # pragma: no cover - streamlit optional
+            import streamlit as st
+
+            st.warning(msg)
+        except Exception:
+            print(f"[stitch_terms] {msg}")
+    elif verbose:
         print(f"[stitch_terms] {len(pw)} pairwise ratios computed")
     if verbose:
         print("[stitch_terms] Computing consensus scale")
