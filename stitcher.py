@@ -352,18 +352,61 @@ class TrendsFetcher:
 
     @staticmethod
     def _coerce_date(ts) -> dt.date:
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Coercing date from: {ts} (type: {type(ts)})")
+        
+        # Handle string representation of datetime.date objects
+        if isinstance(ts, str):
+            # Check for "datetime.date(year, month, day)" format
+            if ts.startswith("datetime.date(") and ts.endswith(")"):
+                try:
+                    # Extract the date components from "datetime.date(2025, 8, 24)"
+                    date_str = ts[13:-1]  # Remove "datetime.date(" and ")"
+                    # Parse the components
+                    import ast
+                    date_tuple = ast.literal_eval(date_str)
+                    if len(date_tuple) == 3:
+                        year, month, day = date_tuple
+                        result = dt.date(year, month, day)
+                        logger.debug(f"Successfully parsed datetime.date string: {ts} -> {result}")
+                        return result
+                except Exception as e:
+                    logger.debug(f"Failed to parse datetime.date string {ts}: {e}")
+                    pass
+            
+            # Try to parse as ISO date string
+            try:
+                result = pd.to_datetime(ts).date()
+                logger.debug(f"Successfully parsed ISO date string: {ts} -> {result}")
+                return result
+            except Exception as e:
+                logger.debug(f"Failed to parse ISO date string {ts}: {e}")
+                pass
+        
         # Try Unix seconds
         try:
             if isinstance(ts, (int, float)) and ts > 1000000000:
-                return dt.datetime.utcfromtimestamp(int(ts)).date()
-        except Exception:
+                result = dt.datetime.utcfromtimestamp(int(ts)).date()
+                logger.debug(f"Successfully parsed Unix timestamp: {ts} -> {result}")
+                return result
+        except Exception as e:
+            logger.debug(f"Failed to parse Unix timestamp {ts}: {e}")
             pass
-        # Try ISO date
+        
+        # Try pandas datetime parsing
         try:
-            return pd.to_datetime(ts).date()
-        except Exception:
-            # last resort: today
-            return dt.date.today()
+            result = pd.to_datetime(ts).date()
+            logger.debug(f"Successfully parsed with pandas: {ts} -> {result}")
+            return result
+        except Exception as e:
+            logger.debug(f"Failed to parse with pandas {ts}: {e}")
+            pass
+            
+        # last resort: today
+        logger.warning(f"Could not parse date {ts}, using today's date")
+        return dt.date.today()
 
 
 # -----------------------
@@ -576,7 +619,31 @@ def stitch_terms(
         frames.append(df)
 
     df_long = pd.concat(frames, ignore_index=True)
+    
+    # Debug: Check the data before date conversion
+    if debug:
+        log("[stitch_terms] DEBUG: Data before date conversion")
+        log(f"[stitch_terms] DEBUG: df_long shape: {df_long.shape}")
+        log(f"[stitch_terms] DEBUG: df_long columns: {list(df_long.columns)}")
+        log(f"[stitch_terms] DEBUG: Sample data before date conversion:")
+        log(f"[stitch_terms] DEBUG: {df_long.head()}")
+        log(f"[stitch_terms] DEBUG: Date column type: {df_long['date'].dtype}")
+        log(f"[stitch_terms] DEBUG: Value column type: {df_long['value'].dtype}")
+        log(f"[stitch_terms] DEBUG: Value range: {df_long['value'].min()} to {df_long['value'].max()}")
+        log(f"[stitch_terms] DEBUG: NaN count in values: {df_long['value'].isna().sum()}")
+    
     df_long["date"] = pd.to_datetime(df_long["date"]).dt.date
+    
+    # Debug: Check the data after date conversion
+    if debug:
+        log("[stitch_terms] DEBUG: Data after date conversion")
+        log(f"[stitch_terms] DEBUG: df_long shape: {df_long.shape}")
+        log(f"[stitch_terms] DEBUG: Date column type: {df_long['date'].dtype}")
+        log(f"[stitch_terms] DEBUG: Value range: {df_long['value'].min()} to {df_long['value'].max()}")
+        log(f"[stitch_terms] DEBUG: NaN count in values: {df_long['value'].isna().sum()}")
+        log(f"[stitch_terms] DEBUG: Sample data after date conversion:")
+        log(f"[stitch_terms] DEBUG: {df_long.head()}")
+    
     log("[stitch_terms] Fetched %d rows", len(df_long))
 
     # Ratios & scales
@@ -598,11 +665,25 @@ def stitch_terms(
     # Build wide (average across any duplicate points from overlapping batches)
     log("[stitch_terms] Building wide dataframe")
     all_dates = sorted(df_long["date"].unique())
+    
+    if debug:
+        log(f"[stitch_terms] DEBUG: All dates: {all_dates[:10]}... (total: {len(all_dates)})")
+        log(f"[stitch_terms] DEBUG: Terms: {terms}")
+        log(f"[stitch_terms] DEBUG: df_long term counts: {df_long['term'].value_counts().to_dict()}")
+    
     wide = (
         df_long.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
         .reindex(index=all_dates, columns=terms)
         .astype(float)
     )
+    
+    if debug:
+        log(f"[stitch_terms] DEBUG: Wide dataframe shape: {wide.shape}")
+        log(f"[stitch_terms] DEBUG: Wide dataframe columns: {list(wide.columns)}")
+        log(f"[stitch_terms] DEBUG: Wide dataframe sample:")
+        log(f"[stitch_terms] DEBUG: {wide.head()}")
+        log(f"[stitch_terms] DEBUG: NaN count in wide: {wide.isna().sum().sum()}")
+        log(f"[stitch_terms] DEBUG: Value range in wide: {wide.min().min()} to {wide.max().max()}")
 
     # Apply per-term scale (no per-term normalization here!)
     for t in terms:

@@ -57,6 +57,47 @@ with st.sidebar:
     verbose_logs = st.checkbox("Verbose logging", value=False)
 
     run = st.button("Run")
+    
+    # Add test button
+    if st.button("🧪 Test Data Parsing"):
+        st.subheader("Data Parsing Test")
+        test_data_parsing()
+
+def test_data_parsing():
+    """Test function to verify data parsing"""
+    import pandas as pd
+    from datetime import date
+    
+    # Test data similar to what you're getting from the API
+    test_data = [
+        {"date": "datetime.date(2025, 8, 24)", "term": "nike", "value": 74},
+        {"date": "datetime.date(2025, 8, 24)", "term": "adidas", "value": 45},
+        {"date": "datetime.date(2025, 8, 25)", "term": "nike", "value": 71},
+        {"date": "datetime.date(2025, 8, 25)", "term": "adidas", "value": 43},
+    ]
+    
+    # Test the date parsing
+    from stitcher import TrendsFetcher
+    for item in test_data:
+        parsed_date = TrendsFetcher._coerce_date(item["date"])
+        st.write(f"Original: {item['date']} -> Parsed: {parsed_date}")
+    
+    # Test DataFrame creation
+    df = pd.DataFrame(test_data)
+    st.write("Original DataFrame:")
+    st.write(df)
+    
+    # Test date conversion
+    df["date"] = pd.to_datetime(df["date"]).dt.date
+    st.write("After date conversion:")
+    st.write(df)
+    
+    # Test pivot
+    wide = df.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
+    st.write("Pivoted DataFrame:")
+    st.write(wide)
+    
+    return df, wide
 
 def test_api_connection(api_key: str) -> bool:
     """Simple test to verify API connectivity"""
