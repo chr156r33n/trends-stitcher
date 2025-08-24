@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 
-from trends_stitcher import stitch_terms
+from stitcher import stitch_terms
 
 st.set_page_config(page_title="Trends Stitcher", layout="wide")
 st.title("Google Trends: Auto-Stitched Comparable Scale")
