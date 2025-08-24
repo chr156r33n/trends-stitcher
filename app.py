@@ -6,6 +6,20 @@ import altair as alt
 
 from stitcher import stitch_terms
 
+# If this script is executed with `python app.py` instead of
+# `streamlit run app.py`, re-launch it via the Streamlit CLI so the
+# interactive app works as expected.
+try:  # pragma: no cover - best effort safeguard
+    from streamlit.runtime.scriptrunner_utils import script_run_context
+    if script_run_context.get_script_run_ctx() is None:  # not running via `streamlit run`
+        import sys
+        from streamlit.web import cli as stcli
+
+        sys.argv = ["streamlit", "run", sys.argv[0]]
+        sys.exit(stcli.main())
+except Exception:
+    pass
+
 st.set_page_config(page_title="Trends Stitcher", layout="wide")
 st.title("Google Trends: Auto-Stitched Comparable Scale")
 
