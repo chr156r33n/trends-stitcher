@@ -17,7 +17,12 @@ import requests
 # -----------------------
 
 def _mk_cache_path(cache_dir: str, params: Dict) -> str:
-    os.makedirs(cache_dir, exist_ok=True)
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(
+            f"Failed to create cache directory '{cache_dir}': {e}"
+        ) from e
     blob = json.dumps(params, sort_keys=True, ensure_ascii=False)
     h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:24]
     return os.path.join(cache_dir, f"{h}.json")

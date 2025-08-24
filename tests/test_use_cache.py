@@ -5,7 +5,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from stitcher import stitch_terms
+from stitcher import stitch_terms, _mk_cache_path
 
 
 class DummyResponse:
@@ -74,3 +74,12 @@ def test_use_cache_false_bypasses_cache(monkeypatch):
     )
     assert calls["load"] == 0
     assert calls["save"] == 0
+
+
+def test_cache_dir_creation_failure(monkeypatch):
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("stitcher.os.makedirs", fail)
+    with pytest.raises(RuntimeError, match="Failed to create cache directory"):
+        _mk_cache_path("tmp", {})
