@@ -1,4 +1,6 @@
 from datetime import date
+import traceback
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -152,21 +154,27 @@ if run:
         st.stop()
 
     with st.spinner("Fetching, stitching, and preparing views..."):
-        df_scaled, pivot_scores, scales = stitch_terms(
-            serpapi_key=serpapi_key,
-            terms=terms,
-            geo=geo,
-            timeframe=timeframe,
-            group_size=group_size,
-            cache_dir=cache_dir,
-            sleep_ms=int(sleep_ms),
-            verbose=verbose_logs,
-            use_cache=use_cache,
-            debug=show_debug,
-        )
+        try:
+            df_scaled, pivot_scores, scales = stitch_terms(
+                serpapi_key=serpapi_key,
+                terms=terms,
+                geo=geo,
+                timeframe=timeframe,
+                group_size=group_size,
+                cache_dir=cache_dir,
+                sleep_ms=int(sleep_ms),
+                verbose=verbose_logs,
+                use_cache=use_cache,
+                debug=show_debug,
+            )
 
-        df_scaled = filter_date_range(df_scaled, start_date, end_date)
-        df_scaled = apply_smoothing(df_scaled, smoothing_days)
+            df_scaled = filter_date_range(df_scaled, start_date, end_date)
+            df_scaled = apply_smoothing(df_scaled, smoothing_days)
+        except Exception as e:
+            st.error(str(e))
+            if show_debug:
+                st.write(traceback.format_exc())
+            st.stop()
 
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
     st.caption("Consensus scaling + optional smoothing + date filtering.")
