@@ -10,6 +10,10 @@ from typing import List, Tuple, Dict
 import numpy as np
 import pandas as pd
 import requests
+import logging
+
+logger = logging.getLogger(__name__)
+logger.propagate = True
 
 
 # -----------------------
@@ -382,8 +386,8 @@ def stitch_terms(
       - return wide timeseries (date x terms) on a comparable scale (global max=100),
         pivot_scores, and per-term scale factors.
     """
-    if verbose:
-        print(f"[stitch_terms] Starting with {len(terms)} terms")
+    log = logger.info if verbose else logger.debug
+    log("[stitch_terms] Starting with %d terms", len(terms))
 
     fetcher = TrendsFetcher(
         serpapi_key,
@@ -395,25 +399,21 @@ def stitch_terms(
         debug=debug,
     )
     batches = make_batches(terms, group_size=group_size)
-    if verbose:
-        print(f"[stitch_terms] Created {len(batches)} batches")
+    log("[stitch_terms] Created %d batches", len(batches))
 
     frames = []
     for i, batch in enumerate(batches, start=1):
-        if verbose:
-            print(f"[stitch_terms] Fetching batch {i}/{len(batches)}: {batch}")
+        log("[stitch_terms] Fetching batch %d/%d: %s", i, len(batches), batch)
         df = fetcher.fetch_batch(batch)
         df["batch_id"] = f"batch_{i}"
         frames.append(df)
 
     df_long = pd.concat(frames, ignore_index=True)
     df_long["date"] = pd.to_datetime(df_long["date"]).dt.date
-    if verbose:
-        print(f"[stitch_terms] Fetched {len(df_long)} rows")
+    log("[stitch_terms] Fetched %d rows", len(df_long))
 
     # Ratios & scales
-    if verbose:
-        print("[stitch_terms] Computing pairwise ratios")
+    log("[stitch_terms] Computing pairwise ratios")
     pw = pairwise_ratios(df_long)
     if pw.empty:
         msg = "No overlapping data found; default scale of 1 used."
@@ -422,16 +422,14 @@ def stitch_terms(
 
             st.warning(msg)
         except Exception:
-            print(f"[stitch_terms] {msg}")
-    elif verbose:
-        print(f"[stitch_terms] {len(pw)} pairwise ratios computed")
-    if verbose:
-        print("[stitch_terms] Computing consensus scale")
+            logger.warning("[stitch_terms] %s", msg)
+    else:
+        log("[stitch_terms] %d pairwise ratios computed", len(pw))
+    log("[stitch_terms] Computing consensus scale")
     scales = consensus_scale(pw, terms)  # max(scale)=1.0
 
     # Build wide (average across any duplicate points from overlapping batches)
-    if verbose:
-        print("[stitch_terms] Building wide dataframe")
+    log("[stitch_terms] Building wide dataframe")
     all_dates = sorted(df_long["date"].unique())
     wide = (
         df_long.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
@@ -448,12 +446,10 @@ def stitch_terms(
     if globmax and globmax > 0:
         wide = wide * (100.0 / globmax)
 
-    if verbose:
-        print("[stitch_terms] Computing pivot scores")
+    log("[stitch_terms] Computing pivot scores")
     pivot_scores = score_pivots(
         df_long.assign(date=pd.to_datetime(df_long["date"]))
     , terms)
 
-    if verbose:
-        print("[stitch_terms] Done")
+    log("[stitch_terms] Done")
     return wide.reset_index().rename(columns={"index": "date"}), pivot_scores, scales
