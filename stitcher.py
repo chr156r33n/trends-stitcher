@@ -92,8 +92,8 @@ class TrendsFetcher:
         params = {
             "engine": "google_trends",
             "q": q,
-            "data_type": "TIMESERIES",
-            "date": self.timeframe,
+            "hl": "en",  # Add language parameter
+            "date": self.timeframe if self.timeframe else "all",  # Use selected timeframe or default to 'all'
             "api_key": self.key,
         }
         if self.geo:
@@ -190,8 +190,8 @@ class TrendsFetcher:
                 params = {
                     "engine": "google_trends",
                     "q": q_format,
-                    "data_type": "TIMESERIES",
-                    "date": self.timeframe,  # Use 'date' parameter
+                    "hl": "en",  # Add language parameter
+                    "date": self.timeframe if self.timeframe else "all",  # Use selected timeframe or default to 'all'
                     "api_key": self.key,
                 }
                 if self.geo:

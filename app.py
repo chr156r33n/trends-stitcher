@@ -48,7 +48,7 @@ if 'start_date' not in st.session_state:
 if 'end_date' not in st.session_state:
     st.session_state.end_date = None
 if 'timeframe' not in st.session_state:
-    st.session_state.timeframe = "today 5-y"
+    st.session_state.timeframe = "all"
 
 st.set_page_config(page_title="Trends Stitcher", layout="wide")
 st.title("Google Trends: Auto-Stitched Comparable Scale")
@@ -62,7 +62,7 @@ else:
 def get_suggested_timeframe(start_date, end_date):
     """Suggest the best timeframe based on date filters"""
     if not start_date and not end_date:
-        return "today 5-y"  # Default
+        return "all"  # Default to maximum data range
     
     # Calculate the date range
     if start_date and end_date:
@@ -72,7 +72,7 @@ def get_suggested_timeframe(start_date, end_date):
     elif end_date:
         date_range = (end_date - date.today()).days
     else:
-        return "today 5-y"
+        return "all"
     
     # Suggest timeframe based on range
     if date_range <= 30:
@@ -86,7 +86,7 @@ def get_suggested_timeframe(start_date, end_date):
     elif date_range <= 3650:  # 10 years
         return "today 10-y"
     else:
-        return "today 20-y"
+        return "all"  # Use 'all' for very long ranges
 
 def get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache):
     """Get current parameters as a hashable tuple for comparison"""
@@ -110,13 +110,14 @@ with st.sidebar:
     
     # Use selectbox for timeframe with better options
     timeframe_options = [
-        "today 1-m",    # 1 month
-        "today 3-m",    # 3 months  
-        "today 12-m",   # 12 months
-        "today 5-y",    # 5 years
-        "today 10-y",   # 10 years
-        "today 15-y",   # 15 years
-        "today 20-y",   # 20 years
+        "all",           # Maximum data range (recommended)
+        "today 1-m",     # 1 month
+        "today 3-m",     # 3 months  
+        "today 12-m",    # 12 months
+        "today 5-y",     # 5 years
+        "today 10-y",    # 10 years
+        "today 15-y",    # 15 years
+        "today 20-y",    # 20 years
     ]
     
     # Auto-select longer timeframe if date filters are set
@@ -153,16 +154,16 @@ with st.sidebar:
     
     # Add general guidance about timeframe
     st.info("📊 **Timeframe Guide**:\n"
+            "• **'all'**: Maximum data range (recommended for date filtering)\n"
             "• **1-m to 12-m**: Good for recent trends\n"
-            "• **5-y to 20-y**: Better for YoY analysis and historical patterns\n"
-            "• **Longer timeframes** = More data available for date filtering\n"
-            "• **Note**: SerpAPI may limit or override certain timeframes")
+            "• **5-y to 20-y**: Good for historical analysis\n"
+            "• **Note**: Use 'all' for maximum flexibility with date filtering")
     
     # Add button to set maximum timeframe for date filtering
     if start_date or end_date:
         if st.button("🔄 Set Maximum Timeframe for Date Filtering"):
-            st.session_state.timeframe = "today 20-y"
-            st.success("Set timeframe to maximum (20 years) for better date filtering!")
+            st.session_state.timeframe = "all"
+            st.success("Set timeframe to maximum ('all') for better date filtering!")
             st.rerun()
     
     # Add note about SerpAPI limitations
@@ -204,7 +205,7 @@ with st.sidebar:
             st.session_state.smoothing_days = "7"
             st.session_state.start_date = None
             st.session_state.end_date = None
-            st.session_state.timeframe = "today 5-y"
+            st.session_state.timeframe = "all"
             st.success("Cache cleared! Click 'Run' to reload data.")
             st.rerun()
     
@@ -266,6 +267,7 @@ def test_serpapi_timeframes(api_key: str):
     import requests
     
     test_timeframes = [
+        "all",           # Maximum data range
         "today 1-m",
         "today 3-m", 
         "today 12-m",
