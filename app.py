@@ -48,6 +48,7 @@ with st.sidebar:
     sleep_ms = st.number_input("Request sleep (ms)", min_value=0, value=250)
     use_cache = st.checkbox("Use cache", value=True)
     show_debug = st.checkbox("Show debug logs", value=False)
+    verbose_logs = st.checkbox("Verbose logging", value=False)
 
     run = st.button("Run")
 
@@ -159,6 +160,7 @@ if run:
             group_size=group_size,
             cache_dir=cache_dir,
             sleep_ms=int(sleep_ms),
+            verbose=verbose_logs,
             use_cache=use_cache,
             debug=show_debug,
         )
