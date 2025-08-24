@@ -91,15 +91,24 @@ class TrendsFetcher:
         if data is None:
             self._log_debug("Request params", params)
             r = requests.get("https://serpapi.com/search", params=params, timeout=60)
-            self._log_debug("HTTP status", r.status_code)
+            status = r.status_code
+            body = getattr(r, "text", "") or ""
+            self._log_debug("HTTP status", status)
             rate = r.headers.get("X-RateLimit-Remaining")
             if rate is not None:
                 self._log_debug("X-RateLimit-Remaining", rate)
-            r.raise_for_status()
-            data = r.json()
-            err = data.get("error") or data.get("error_message")
-            if err:
-                raise RuntimeError(f"SerpAPI error: {err}")
+            try:
+                r.raise_for_status()
+                data = r.json()
+                err = data.get("error") or data.get("error_message")
+                if err:
+                    raise RuntimeError(f"SerpAPI error: {err}")
+            except Exception as e:
+                msg = f"{e}; status={status}"
+                if rate is not None:
+                    msg += f"; X-RateLimit-Remaining={rate}"
+                msg += f"; body={body[:200]}"
+                raise RuntimeError(msg)
             self._log_debug("Response sample", json.dumps(data)[:200])
             if self.use_cache:
                 _save_cache(cache_path, data)
