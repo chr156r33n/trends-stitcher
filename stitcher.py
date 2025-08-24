@@ -55,6 +55,7 @@ class TrendsFetcher:
     def fetch_batch(self, terms: List[str]) -> pd.DataFrame:
         if len(terms) > 5:
             raise ValueError("Max 5 terms per Trends batch.")
+        print(f"[TrendsFetcher] fetching batch: {terms}")
         q = ",".join(terms)
         params = {
             "engine": "google_trends",
@@ -69,6 +70,7 @@ class TrendsFetcher:
         cache_path = _mk_cache_path(self.cache_dir, params)
         data = _load_cache(cache_path)
         if data is None:
+            print("[TrendsFetcher] cache miss, requesting from API")
             r = requests.get("https://serpapi.com/search", params=params, timeout=60)
             r.raise_for_status()
             data = r.json()
@@ -76,6 +78,8 @@ class TrendsFetcher:
             # polite pause
             if self.sleep_ms > 0:
                 time.sleep(self.sleep_ms / 1000.0)
+        else:
+            print("[TrendsFetcher] using cached data")
 
         return self._parse_timeseries(data, terms)
 
@@ -325,6 +329,7 @@ def stitch_terms(
     group_size: int = 5,
     cache_dir: str = ".cache",
     sleep_ms: int = 250,
+    verbose: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     """
     Main pipeline:
@@ -334,23 +339,40 @@ def stitch_terms(
       - return wide timeseries (date x terms) on a comparable scale (global max=100),
         pivot_scores, and per-term scale factors.
     """
+    if verbose:
+        print(f"[stitch_terms] Starting with {len(terms)} terms")
+
     fetcher = TrendsFetcher(serpapi_key, geo=geo, timeframe=timeframe, cache_dir=cache_dir, sleep_ms=sleep_ms)
     batches = make_batches(terms, group_size=group_size)
+    if verbose:
+        print(f"[stitch_terms] Created {len(batches)} batches")
 
     frames = []
     for i, batch in enumerate(batches, start=1):
+        if verbose:
+            print(f"[stitch_terms] Fetching batch {i}/{len(batches)}: {batch}")
         df = fetcher.fetch_batch(batch)
         df["batch_id"] = f"batch_{i}"
         frames.append(df)
 
     df_long = pd.concat(frames, ignore_index=True)
     df_long["date"] = pd.to_datetime(df_long["date"]).dt.date
+    if verbose:
+        print(f"[stitch_terms] Fetched {len(df_long)} rows")
 
     # Ratios & scales
+    if verbose:
+        print("[stitch_terms] Computing pairwise ratios")
     pw = pairwise_ratios(df_long)
+    if verbose:
+        print(f"[stitch_terms] {len(pw)} pairwise ratios computed")
+    if verbose:
+        print("[stitch_terms] Computing consensus scale")
     scales = consensus_scale(pw, terms)  # max(scale)=1.0
 
     # Build wide (average across any duplicate points from overlapping batches)
+    if verbose:
+        print("[stitch_terms] Building wide dataframe")
     all_dates = sorted(df_long["date"].unique())
     wide = (
         df_long.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
@@ -367,8 +389,12 @@ def stitch_terms(
     if globmax and globmax > 0:
         wide = wide * (100.0 / globmax)
 
+    if verbose:
+        print("[stitch_terms] Computing pivot scores")
     pivot_scores = score_pivots(
         df_long.assign(date=pd.to_datetime(df_long["date"]))
     , terms)
 
+    if verbose:
+        print("[stitch_terms] Done")
     return wide.reset_index().rename(columns={"index": "date"}), pivot_scores, scales
