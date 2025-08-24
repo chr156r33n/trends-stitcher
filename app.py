@@ -209,6 +209,26 @@ if run:
                 st.success(f"Successfully fetched data: {df_scaled.shape}")
                 st.info(f"Data columns: {list(df_scaled.columns)}")
                 st.info(f"Date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+                
+                # Show raw API response for debugging
+                st.subheader("🔍 Raw API Response Debug")
+                try:
+                    from stitcher import TrendsFetcher
+                    fetcher = TrendsFetcher(
+                        serpapi_key=serpapi_key,
+                        geo=geo,
+                        timeframe=timeframe,
+                        cache_dir=cache_dir,
+                        sleep_ms=int(sleep_ms),
+                        use_cache=False,  # Force fresh request
+                        debug=True,
+                    )
+                    test_df = fetcher.fetch_batch(terms[:2])  # Test with first 2 terms
+                    st.success(f"Test API call successful: {test_df.shape}")
+                    st.json(test_df.head(10).to_dict('records'))
+                except Exception as debug_e:
+                    st.error(f"Debug API call failed: {debug_e}")
+                    st.code(traceback.format_exc())
 
             df_scaled = filter_date_range(df_scaled, start_date, end_date)
             df_scaled = apply_smoothing(df_scaled, smoothing_days)

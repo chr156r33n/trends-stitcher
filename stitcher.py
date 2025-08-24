@@ -83,7 +83,11 @@ class TrendsFetcher:
         if len(terms) > 5:
             raise ValueError("Max 5 terms per Trends batch.")
         self._log_debug(f"Fetching batch: {terms}")
-        q = ",".join(terms)
+        
+        # Try different query formats - SerpAPI might prefer different separators
+        q = ",".join(terms)  # comma-separated
+        self._log_debug(f"Query string: {q}")
+        
         params = {
             "engine": "google_trends",
             "q": q,
@@ -94,11 +98,13 @@ class TrendsFetcher:
         if self.geo:
             params["geo"] = self.geo
 
+        self._log_debug(f"Full request params: {params}")
+        
         cache_path = _mk_cache_path(self.cache_dir, params)
         self._log_debug("Cache path", cache_path)
         data = _load_cache(cache_path) if self.use_cache else None
         if data is None:
-            self._log_debug("Request params", params)
+            self._log_debug("Making API request...")
             try:
                 r = requests.get("https://serpapi.com/search", params=params, timeout=60)
                 status = r.status_code
@@ -114,6 +120,16 @@ class TrendsFetcher:
                 if err:
                     raise RuntimeError(f"SerpAPI error: {err}")
                     
+                # Log the response structure for debugging
+                self._log_debug(f"Response keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                if isinstance(data, dict) and 'interest_over_time' in data:
+                    io_data = data['interest_over_time']
+                    self._log_debug(f"interest_over_time type: {type(io_data)}")
+                    if isinstance(io_data, dict):
+                        self._log_debug(f"interest_over_time keys: {list(io_data.keys())}")
+                    elif isinstance(io_data, list) and len(io_data) > 0:
+                        self._log_debug(f"First interest_over_time item: {io_data[0]}")
+                        
             except requests.exceptions.RequestException as e:
                 msg = f"Network error: {e}; status={getattr(e.response, 'status_code', 'N/A')}"
                 if hasattr(e, 'response') and e.response is not None:
@@ -141,60 +157,196 @@ class TrendsFetcher:
         else:
             self._log_debug("Using cached data", cache_path)
 
-        return self._parse_timeseries(data, terms)
+        # Try to parse the response
+        try:
+            return self._parse_timeseries(data, terms)
+        except Exception as parse_error:
+            self._log_debug(f"Initial parsing failed: {parse_error}")
+            # If parsing failed, try alternative query formats
+            return self._try_alternative_query_format(terms)
+
+    def _try_alternative_query_format(self, terms: List[str]) -> pd.DataFrame:
+        """Try alternative query formats if the main one fails"""
+        self._log_debug("Trying alternative query format...")
+        
+        # Try with different separators
+        query_formats = [
+            ",".join(terms),  # comma-separated
+            " ".join(terms),  # space-separated
+            "|".join(terms),  # pipe-separated
+        ]
+        
+        for q_format in query_formats:
+            try:
+                self._log_debug(f"Trying query format: {q_format}")
+                params = {
+                    "engine": "google_trends",
+                    "q": q_format,
+                    "data_type": "TIMESERIES",
+                    "time": self.timeframe,
+                    "api_key": self.key,
+                }
+                if self.geo:
+                    params["geo"] = self.geo
+                
+                r = requests.get("https://serpapi.com/search", params=params, timeout=60)
+                r.raise_for_status()
+                data = r.json()
+                
+                err = data.get("error") or data.get("error_message")
+                if err:
+                    self._log_debug(f"Format {q_format} failed with error: {err}")
+                    continue
+                
+                # Try to parse this response
+                df = self._parse_timeseries(data, terms)
+                if not df.empty:
+                    self._log_debug(f"Success with query format: {q_format}")
+                    return df
+                    
+            except Exception as e:
+                self._log_debug(f"Format {q_format} failed: {e}")
+                continue
+        
+        raise RuntimeError("All query formats failed")
 
     @staticmethod
     def _parse_timeseries(payload: Dict, terms: List[str]) -> pd.DataFrame:
         """
         Parse SerpAPI payload into long form [date, term, value].
-        Handles a couple of common shapes.
+        Handles multiple response formats from SerpAPI Google Trends.
         """
-        # Try common paths
+        # Debug: Log the full payload structure
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Parsing payload with keys: {list(payload.keys()) if isinstance(payload, dict) else 'Not a dict'}")
+        
+        # Try multiple possible paths for timeline data
         timeline = None
         if isinstance(payload, dict):
+            # Path 1: interest_over_time.timeline_data
             io = payload.get("interest_over_time", {})
             if isinstance(io, dict):
                 timeline = io.get("timeline_data")
+            
+            # Path 2: direct timeline_data
             if timeline is None:
                 timeline = payload.get("timeline_data")
+            
+            # Path 3: interest_over_time directly
+            if timeline is None and isinstance(io, list):
+                timeline = io
+            
+            # Path 4: Check for other possible structures
+            if timeline is None:
+                for key in payload.keys():
+                    if 'time' in key.lower() or 'trend' in key.lower():
+                        potential = payload.get(key)
+                        if isinstance(potential, list) and len(potential) > 0:
+                            if isinstance(potential[0], dict) and any(k in potential[0] for k in ['time', 'date', 'timestamp']):
+                                timeline = potential
+                                logger.debug(f"Found timeline in key: {key}")
+                                break
 
         if not timeline:
             keys = list(payload.keys()) if isinstance(payload, dict) else []
+            logger.error(f"No timeline_data found. Available keys: {keys}")
+            logger.error(f"Payload sample: {str(payload)[:500]}")
             raise RuntimeError(f"No timeline_data returned. Raw keys: {keys}")
 
+        logger.debug(f"Found timeline with {len(timeline)} points")
+        if len(timeline) > 0:
+            logger.debug(f"First timeline point: {timeline[0]}")
+
         rows = []
-        for point in timeline:
-            # timestamp handling
-            ts = point.get("time") or point.get("timestamp") or point.get("date") or point.get("formattedTime")
+        for i, point in enumerate(timeline):
+            # timestamp handling - try multiple formats
+            ts = None
+            for ts_key in ['time', 'timestamp', 'date', 'formattedTime', 'formatted_time']:
+                ts = point.get(ts_key)
+                if ts is not None:
+                    break
+            
             if ts is None:
+                logger.warning(f"No timestamp found in point {i}: {point}")
                 continue
+                
             date = TrendsFetcher._coerce_date(ts)
 
-            # values can be list-of-dicts or list aligned to input terms
+            # Try multiple value extraction methods
+            vals = None
+            
+            # Method 1: values or value field
             vals = point.get("values") or point.get("value")
+            
+            # Method 2: Check if point itself contains term-value pairs
+            if vals is None:
+                # Look for term names in the point keys
+                term_values = {}
+                for key, value in point.items():
+                    if key not in ['time', 'timestamp', 'date', 'formattedTime', 'formatted_time']:
+                        try:
+                            term_values[key] = float(value)
+                        except (ValueError, TypeError):
+                            continue
+                if term_values:
+                    for term, value in term_values.items():
+                        rows.append({"date": date, "term": str(term), "value": value})
+                    continue
+            
+            # Method 3: Check for interest_over_time structure within point
+            if vals is None:
+                io_point = point.get("interest_over_time", {})
+                if isinstance(io_point, dict):
+                    for term, value in io_point.items():
+                        if term not in ['time', 'timestamp', 'date', 'formattedTime', 'formatted_time']:
+                            try:
+                                rows.append({"date": date, "term": str(term), "value": float(value)})
+                            except (ValueError, TypeError):
+                                continue
+                    continue
+
+            # Process vals if found
             if isinstance(vals, list) and len(vals) > 0:
                 if isinstance(vals[0], dict) and "value" in vals[0]:
+                    # List of dicts with query/value
                     for v in vals:
-                        q = v.get("query")
+                        q = v.get("query") or v.get("term")
                         val = v.get("value")
                         if q is None or val is None:
                             continue
                         try:
                             rows.append({"date": date, "term": str(q), "value": float(val)})
-                        except Exception:
+                        except (ValueError, TypeError):
                             continue
                 else:
-                    # assume aligned to provided "terms"
+                    # List of values aligned to input terms
                     for t, v in itertools.zip_longest(terms, vals):
                         if t is None or v is None:
                             continue
                         try:
                             rows.append({"date": date, "term": str(t), "value": float(v)})
-                        except Exception:
+                        except (ValueError, TypeError):
+                            continue
+            elif isinstance(vals, dict):
+                # Direct dict mapping terms to values
+                for term, value in vals.items():
+                    if term not in ['time', 'timestamp', 'date', 'formattedTime', 'formatted_time']:
+                        try:
+                            rows.append({"date": date, "term": str(term), "value": float(value)})
+                        except (ValueError, TypeError):
                             continue
 
         df = pd.DataFrame(rows)
+        logger.debug(f"Parsed {len(df)} rows from timeline")
+        if not df.empty:
+            logger.debug(f"Sample parsed data:\n{df.head()}")
+            logger.debug(f"Terms found: {df['term'].unique()}")
+            logger.debug(f"Value range: {df['value'].min()} to {df['value'].max()}")
+        
         if df.empty:
+            logger.error("No valid data parsed from timeline")
+            logger.error(f"Timeline sample: {timeline[:2] if timeline else 'Empty timeline'}")
             raise RuntimeError("Empty dataframe from Trends batch parse.")
         return df
 
