@@ -46,13 +46,36 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Advanced")
-    cache_dir = st.text_input("Cache directory", value=".cache")
+    # Use temp directory for cloud environments
+    import tempfile
+    import os
+    default_cache = tempfile.gettempdir() if os.environ.get('STREAMLIT_SERVER_RUN_ON_SAVE') else ".cache"
+    cache_dir = st.text_input("Cache directory", value=default_cache)
     sleep_ms = st.number_input("Request sleep (ms)", min_value=0, value=250)
     use_cache = st.checkbox("Use cache", value=True)
     show_debug = st.checkbox("Show debug logs", value=False)
     verbose_logs = st.checkbox("Verbose logging", value=False)
 
     run = st.button("Run")
+
+def test_api_connection(api_key: str) -> bool:
+    """Simple test to verify API connectivity"""
+    try:
+        import requests
+        test_params = {
+            "engine": "google_trends",
+            "q": "test",
+            "data_type": "TIMESERIES",
+            "time": "today 1-m",
+            "api_key": api_key,
+        }
+        r = requests.get("https://serpapi.com/search", params=test_params, timeout=30)
+        if r.status_code == 200:
+            data = r.json()
+            return not bool(data.get("error") or data.get("error_message"))
+        return False
+    except Exception:
+        return False
 
 def infer_step_days(dates: pd.Series) -> float:
     d = pd.to_datetime(dates).sort_values().drop_duplicates()
@@ -148,6 +171,14 @@ if run:
         st.error("Please enter your SerpAPI key.")
         st.stop()
 
+    # Test API connection first
+    with st.spinner("Testing API connection..."):
+        if not test_api_connection(serpapi_key):
+            st.error("❌ API connection test failed. Please check your SerpAPI key and internet connection.")
+            st.stop()
+        else:
+            st.success("✅ API connection successful!")
+
     terms = [t.strip() for t in terms_text.splitlines() if t.strip()]
     if len(terms) < 2:
         st.error("Enter at least two terms.")
@@ -155,6 +186,12 @@ if run:
 
     with st.spinner("Fetching, stitching, and preparing views..."):
         try:
+            # Add debug info
+            if show_debug:
+                st.info(f"Starting with {len(terms)} terms: {terms}")
+                st.info(f"Cache dir: {cache_dir}")
+                st.info(f"Using cache: {use_cache}")
+            
             df_scaled, pivot_scores, scales = stitch_terms(
                 serpapi_key=serpapi_key,
                 terms=terms,
@@ -168,12 +205,18 @@ if run:
                 debug=show_debug,
             )
 
+            if show_debug:
+                st.success(f"Successfully fetched data: {df_scaled.shape}")
+                st.info(f"Data columns: {list(df_scaled.columns)}")
+                st.info(f"Date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+
             df_scaled = filter_date_range(df_scaled, start_date, end_date)
             df_scaled = apply_smoothing(df_scaled, smoothing_days)
         except Exception as e:
-            st.error(str(e))
+            st.error(f"Error during data fetching: {str(e)}")
             if show_debug:
-                st.write(traceback.format_exc())
+                st.write("Full traceback:")
+                st.code(traceback.format_exc())
             st.stop()
 
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
@@ -188,11 +231,25 @@ if run:
 
     long_df = melt_long(df_scaled)
 
+    # Validate data before charting
+    if long_df.empty:
+        st.error("No data available for charting. Please check your API key and terms.")
+        st.stop()
+    
+    if long_df['value'].isna().all():
+        st.error("All values are NaN. This might indicate an API response parsing issue.")
+        st.stop()
+
     st.markdown("### Chart selection")
     default_terms = terms[:min(5, len(terms))]
     selected_terms = st.multiselect("Terms to chart", options=terms, default=default_terms)
     if not selected_terms:
         selected_terms = default_terms
+
+    if show_debug:
+        st.info(f"Chart data shape: {long_df.shape}")
+        st.info(f"Available terms: {long_df['term'].unique()}")
+        st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
     if show_small_multiples:
         small_multiples(long_df, terms)

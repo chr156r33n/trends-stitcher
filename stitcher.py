@@ -99,28 +99,43 @@ class TrendsFetcher:
         data = _load_cache(cache_path) if self.use_cache else None
         if data is None:
             self._log_debug("Request params", params)
-            r = requests.get("https://serpapi.com/search", params=params, timeout=60)
-            status = r.status_code
-            body = getattr(r, "text", "") or ""
-            self._log_debug("HTTP status", status)
-            rate = r.headers.get("X-RateLimit-Remaining")
-            if rate is not None:
-                self._log_debug("X-RateLimit-Remaining", rate)
             try:
+                r = requests.get("https://serpapi.com/search", params=params, timeout=60)
+                status = r.status_code
+                body = getattr(r, "text", "") or ""
+                self._log_debug("HTTP status", status)
+                rate = r.headers.get("X-RateLimit-Remaining")
+                if rate is not None:
+                    self._log_debug("X-RateLimit-Remaining", rate)
+                
                 r.raise_for_status()
                 data = r.json()
                 err = data.get("error") or data.get("error_message")
                 if err:
                     raise RuntimeError(f"SerpAPI error: {err}")
+                    
+            except requests.exceptions.RequestException as e:
+                msg = f"Network error: {e}; status={getattr(e.response, 'status_code', 'N/A')}"
+                if hasattr(e, 'response') and e.response is not None:
+                    rate = e.response.headers.get("X-RateLimit-Remaining")
+                    if rate is not None:
+                        msg += f"; X-RateLimit-Remaining={rate}"
+                    body = getattr(e.response, "text", "") or ""
+                    msg += f"; body={body[:200]}"
+                raise RuntimeError(msg)
             except Exception as e:
-                msg = f"{e}; status={status}"
+                msg = f"Unexpected error: {e}; status={status}"
                 if rate is not None:
                     msg += f"; X-RateLimit-Remaining={rate}"
                 msg += f"; body={body[:200]}"
                 raise RuntimeError(msg)
+                
             self._log_debug("Response sample", json.dumps(data)[:200])
             if self.use_cache:
-                _save_cache(cache_path, data)
+                try:
+                    _save_cache(cache_path, data)
+                except Exception as cache_error:
+                    self._log_debug(f"Cache save failed: {cache_error}")
             if self.sleep_ms > 0:
                 time.sleep(self.sleep_ms / 1000.0)
         else:
