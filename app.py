@@ -90,6 +90,10 @@ with st.sidebar:
     st.session_state.start_date = start_date
     end_date = st.date_input("End date (optional)", value=st.session_state.end_date)
     st.session_state.end_date = end_date
+    
+    # Add warning about timeframe vs date filtering
+    if start_date or end_date:
+        st.info("💡 **Note**: Date filtering works on the data returned by the API. To get more data for filtering, consider using a longer timeframe (e.g., 'today 5-y' instead of 'today 12-m').")
 
     st.markdown("---")
     st.subheader("Chart options")
@@ -140,6 +144,11 @@ with st.sidebar:
         st.subheader("Data Parsing Test")
         test_data_parsing()
     
+    # Add YoY test button
+    if st.button("📊 Test YoY Calculation"):
+        st.subheader("YoY Calculation Test")
+        test_yoy_calculation()
+    
     # Add import test button
     if st.button("🔧 Test Imports"):
         st.subheader("Import Test")
@@ -170,6 +179,40 @@ with st.sidebar:
         except Exception as e:
             st.error(f"❌ Import test failed: {e}")
             st.code(traceback.format_exc())
+
+def test_yoy_calculation():
+    """Test function to verify YoY calculation"""
+    import pandas as pd
+    from datetime import date, timedelta
+    
+    # Create test data with known YoY relationships
+    dates = pd.date_range(start='2023-01-01', end='2024-12-31', freq='D')
+    test_data = []
+    
+    for i, d in enumerate(dates):
+        # Create some test values with a known pattern
+        base_value = 50 + 10 * np.sin(i / 30)  # Seasonal pattern
+        test_data.append({
+            "date": d,
+            "term": "test_term",
+            "value": base_value
+        })
+    
+    df = pd.DataFrame(test_data)
+    st.write("Test data sample:")
+    st.write(df.head(10))
+    
+    # Test YoY calculation
+    yt = yoy_table(df, "test_term")
+    st.write("YoY calculation result:")
+    st.write(yt.head(10))
+    
+    if not yt.empty:
+        st.write(f"YoY data shape: {yt.shape}")
+        st.write(f"Non-null previous year values: {yt['previous_year'].notna().sum()}")
+        st.write(f"Non-null pct_diff values: {yt['pct_diff'].notna().sum()}")
+    else:
+        st.error("YoY calculation returned empty result")
 
 def test_data_parsing():
     """Test function to verify data parsing"""
@@ -305,20 +348,48 @@ def cached_melt_long(df_scaled: pd.DataFrame) -> pd.DataFrame:
     return melt_long(df_scaled)
 
 def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
+    """
+    Calculate year-over-year comparison for a given term.
+    Finds the closest date from the previous year for each current date.
+    """
+    # Filter data for the specific term and sort by date
     g = long_df[long_df["term"] == term].sort_values("date").copy()
-    g["prior_date"] = g["date"] - pd.Timedelta(days=365)
-    prior = g[["date", "value"]].copy()
-    prior.columns = ["prior_date", "prior_value"]
-    merged = pd.merge(g, prior, on="prior_date", how="left")
+    
+    if g.empty:
+        return pd.DataFrame(columns=["date", "current", "previous_year", "abs_diff", "pct_diff"])
+    
+    # Convert dates to datetime if they aren't already
+    g["date"] = pd.to_datetime(g["date"])
+    
+    # Create a copy for previous year data
+    g_prev = g.copy()
+    g_prev["date"] = g_prev["date"] - pd.Timedelta(days=365)
+    g_prev = g_prev.rename(columns={"value": "prior_value"})
+    
+    # Merge current and previous year data
+    # Use merge_asof to find the closest previous year date for each current date
+    merged = pd.merge_asof(
+        g.sort_values("date"), 
+        g_prev[["date", "prior_value"]].sort_values("date"),
+        on="date",
+        direction="backward",  # Use the most recent previous year data
+        tolerance=pd.Timedelta(days=30)  # Allow up to 30 days difference
+    )
+    
+    # Calculate differences
     merged["abs_diff"] = merged["value"] - merged["prior_value"]
     merged["pct_diff"] = np.where(
         merged["prior_value"] > 0,
         (merged["abs_diff"] / merged["prior_value"]) * 100.0,
         np.nan
     )
-    return merged[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
+    
+    # Return the result with proper column names
+    result = merged[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
         columns={"value": "current", "prior_value": "previous_year"}
     )
+    
+    return result
 
 def line_chart_multi(long_df: pd.DataFrame, selected_terms: list, title: str):
     data = long_df[long_df["term"].isin(selected_terms)]
@@ -425,6 +496,9 @@ if run:
                     st.info(f"Starting with {len(terms)} terms: {terms}")
                     st.info(f"Cache dir: {cache_dir}")
                     st.info(f"Using cache: {use_cache}")
+                    st.info(f"API timeframe: {timeframe}")
+                    st.info(f"Date filters: {start_date} to {end_date}")
+                    st.info(f"Note: API timeframe ({timeframe}) may limit available data regardless of date filters")
                 
                 df_scaled, pivot_scores, scales = stitch_terms(
                     serpapi_key=serpapi_key,
@@ -486,7 +560,20 @@ if run:
         terms = st.session_state.terms
 
     # Apply filters to the data
+    if show_debug:
+        st.subheader("🔍 Date Filtering Debug")
+        st.write(f"Original data shape: {df_scaled.shape}")
+        st.write(f"Original date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+        st.write(f"Start date filter: {start_date}")
+        st.write(f"End date filter: {end_date}")
+    
     df_scaled = cached_filter_date_range(df_scaled, start_date, end_date)
+    
+    if show_debug:
+        st.write(f"After date filtering shape: {df_scaled.shape}")
+        if not df_scaled.empty:
+            st.write(f"After date filtering range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+    
     df_scaled = cached_apply_smoothing(df_scaled, smoothing_days)
 
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
@@ -559,6 +646,21 @@ if run:
     st.session_state.selected_yoy_term = yoy_term
     
     yt = yoy_table(long_df, yoy_term)
+    
+    # Debug YoY data
+    if show_debug:
+        st.subheader("🔍 YoY Debug Info")
+        st.write(f"YoY term: {yoy_term}")
+        st.write(f"YoY data shape: {yt.shape}")
+        st.write(f"YoY data sample:")
+        st.write(yt.head(10))
+        st.write(f"YoY data info:")
+        st.write(yt.info())
+        if not yt.empty:
+            st.write(f"YoY date range: {yt['date'].min()} to {yt['date'].max()}")
+            st.write(f"YoY non-null current values: {yt['current'].notna().sum()}")
+            st.write(f"YoY non-null previous values: {yt['previous_year'].notna().sum()}")
+            st.write(f"YoY non-null pct_diff values: {yt['pct_diff'].notna().sum()}")
 
     col1, col2 = st.columns(2)
     with col1:
