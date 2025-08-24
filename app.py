@@ -47,6 +47,8 @@ if 'start_date' not in st.session_state:
     st.session_state.start_date = None
 if 'end_date' not in st.session_state:
     st.session_state.end_date = None
+if 'timeframe' not in st.session_state:
+    st.session_state.timeframe = "today 5-y"
 
 st.set_page_config(page_title="Trends Stitcher", layout="wide")
 st.title("Google Trends: Auto-Stitched Comparable Scale")
@@ -56,6 +58,35 @@ if st.session_state.data_loaded:
     st.success(f"✅ Data loaded: {len(st.session_state.terms) if st.session_state.terms else 0} terms, {st.session_state.df_scaled.shape[0] if st.session_state.df_scaled is not None else 0} data points")
 else:
     st.info("📊 No data loaded. Enter parameters and click 'Run' to fetch data.")
+
+def get_suggested_timeframe(start_date, end_date):
+    """Suggest the best timeframe based on date filters"""
+    if not start_date and not end_date:
+        return "today 5-y"  # Default
+    
+    # Calculate the date range
+    if start_date and end_date:
+        date_range = (end_date - start_date).days
+    elif start_date:
+        date_range = (date.today() - start_date).days
+    elif end_date:
+        date_range = (end_date - date.today()).days
+    else:
+        return "today 5-y"
+    
+    # Suggest timeframe based on range
+    if date_range <= 30:
+        return "today 1-m"
+    elif date_range <= 90:
+        return "today 3-m"
+    elif date_range <= 365:
+        return "today 12-m"
+    elif date_range <= 1825:  # 5 years
+        return "today 5-y"
+    elif date_range <= 3650:  # 10 years
+        return "today 10-y"
+    else:
+        return "today 20-y"
 
 def get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache):
     """Get current parameters as a hashable tuple for comparison"""
@@ -76,7 +107,32 @@ with st.sidebar:
     serpapi_key = st.text_input("SerpAPI API Key", type="password", value="")
     terms_text = st.text_area("Terms (one per line)", "nike\nadidas\npuma\nnew balance\nasics")
     geo = st.text_input("Geo (e.g. GB, US — optional)", value="")
-    timeframe = st.text_input("Timeframe", value="today 5-y")
+    
+    # Use selectbox for timeframe with better options
+    timeframe_options = [
+        "today 1-m",    # 1 month
+        "today 3-m",    # 3 months  
+        "today 12-m",   # 12 months
+        "today 5-y",    # 5 years
+        "today 10-y",   # 10 years
+        "today 15-y",   # 15 years
+        "today 20-y",   # 20 years
+    ]
+    
+    # Auto-select longer timeframe if date filters are set
+    if st.session_state.start_date or st.session_state.end_date:
+        # If user has set date filters, suggest a longer timeframe
+        suggested_timeframe = get_suggested_timeframe(st.session_state.start_date, st.session_state.end_date)
+        st.info(f"📅 Date filters detected. Using longer timeframe ({suggested_timeframe}) to get more data for filtering.")
+        current_timeframe = st.session_state.timeframe if st.session_state.timeframe in timeframe_options else suggested_timeframe
+        timeframe = st.selectbox("API Timeframe", timeframe_options, index=timeframe_options.index(current_timeframe))
+    else:
+        current_timeframe = st.session_state.timeframe if st.session_state.timeframe in timeframe_options else "today 5-y"
+        timeframe = st.selectbox("API Timeframe", timeframe_options, index=timeframe_options.index(current_timeframe))
+    
+    # Update session state
+    st.session_state.timeframe = timeframe
+    
     group_size = st.slider("Batch size (max 5)", 2, 5, 5)
 
     st.markdown("---")
@@ -94,6 +150,19 @@ with st.sidebar:
     # Add warning about timeframe vs date filtering
     if start_date or end_date:
         st.info("💡 **Note**: Date filtering works on the data returned by the API. To get more data for filtering, consider using a longer timeframe (e.g., 'today 5-y' instead of 'today 12-m').")
+    
+    # Add general guidance about timeframe
+    st.info("📊 **Timeframe Guide**:\n"
+            "• **1-m to 12-m**: Good for recent trends\n"
+            "• **5-y to 20-y**: Better for YoY analysis and historical patterns\n"
+            "• **Longer timeframes** = More data available for date filtering")
+    
+    # Add button to set maximum timeframe for date filtering
+    if start_date or end_date:
+        if st.button("🔄 Set Maximum Timeframe for Date Filtering"):
+            st.session_state.timeframe = "today 20-y"
+            st.success("Set timeframe to maximum (20 years) for better date filtering!")
+            st.rerun()
 
     st.markdown("---")
     st.subheader("Chart options")
@@ -131,6 +200,7 @@ with st.sidebar:
             st.session_state.smoothing_days = "7"
             st.session_state.start_date = None
             st.session_state.end_date = None
+            st.session_state.timeframe = "today 5-y"
             st.success("Cache cleared! Click 'Run' to reload data.")
             st.rerun()
     
