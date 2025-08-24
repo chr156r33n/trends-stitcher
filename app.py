@@ -1,14 +1,10 @@
-import os
 from datetime import date
 import numpy as np
 import pandas as pd
 import streamlit as st
 import altair as alt
-from dotenv import load_dotenv
 
 from trends_stitcher import stitch_terms
-
-load_dotenv()
 
 st.set_page_config(page_title="Trends Stitcher", layout="wide")
 st.title("Google Trends: Auto-Stitched Comparable Scale")
@@ -16,10 +12,10 @@ st.title("Google Trends: Auto-Stitched Comparable Scale")
 # Sidebar
 with st.sidebar:
     st.subheader("Data")
-    serpapi_key = st.text_input("SerpAPI API Key", type="password", value=os.getenv("SERPAPI_API_KEY", ""))
+    serpapi_key = st.text_input("SerpAPI API Key", type="password", value="")
     terms_text = st.text_area("Terms (one per line)", "nike\nadidas\npuma\nnew balance\nasics")
-    geo = st.text_input("Geo (e.g. GB, US — optional)", value=os.getenv("GEO", ""))
-    timeframe = st.text_input("Timeframe", value=os.getenv("TIMEFRAME", "today 5-y"))
+    geo = st.text_input("Geo (e.g. GB, US — optional)", value="")
+    timeframe = st.text_input("Timeframe", value="today 5-y")
     group_size = st.slider("Batch size (max 5)", 2, 5, 5)
 
     st.markdown("---")
@@ -34,8 +30,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Advanced")
-    cache_dir = st.text_input("Cache directory", value=os.getenv("CACHE_DIR", ".cache"))
-    sleep_ms = st.number_input("Request sleep (ms)", min_value=0, value=int(os.getenv("REQUEST_SLEEP_MS", "250")))
+    cache_dir = st.text_input("Cache directory", value=".cache")
+    sleep_ms = st.number_input("Request sleep (ms)", min_value=0, value=250)
 
     run = st.button("Run")
 
