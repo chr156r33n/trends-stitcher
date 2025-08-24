@@ -35,6 +35,18 @@ if 'terms' not in st.session_state:
     st.session_state.terms = None
 if 'current_params' not in st.session_state:
     st.session_state.current_params = None
+if 'selected_yoy_term' not in st.session_state:
+    st.session_state.selected_yoy_term = None
+if 'selected_chart_terms' not in st.session_state:
+    st.session_state.selected_chart_terms = None
+if 'show_small_multiples' not in st.session_state:
+    st.session_state.show_small_multiples = False
+if 'smoothing_days' not in st.session_state:
+    st.session_state.smoothing_days = "7"
+if 'start_date' not in st.session_state:
+    st.session_state.start_date = None
+if 'end_date' not in st.session_state:
+    st.session_state.end_date = None
 
 st.set_page_config(page_title="Trends Stitcher", layout="wide")
 st.title("Google Trends: Auto-Stitched Comparable Scale")
@@ -69,13 +81,21 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Smoothing & Range")
-    smoothing_days = st.selectbox("Smoothing window", ["None", "3", "7", "30", "90", "365"], index=2)
-    start_date = st.date_input("Start date (optional)", value=None)
-    end_date = st.date_input("End date (optional)", value=None)
+    smoothing_options = ["None", "3", "7", "30", "90", "365"]
+    smoothing_index = smoothing_options.index(st.session_state.smoothing_days) if st.session_state.smoothing_days in smoothing_options else 2
+    smoothing_days = st.selectbox("Smoothing window", smoothing_options, index=smoothing_index)
+    st.session_state.smoothing_days = smoothing_days
+    
+    start_date = st.date_input("Start date (optional)", value=st.session_state.start_date)
+    st.session_state.start_date = start_date
+    end_date = st.date_input("End date (optional)", value=st.session_state.end_date)
+    st.session_state.end_date = end_date
 
     st.markdown("---")
     st.subheader("Chart options")
-    show_small_multiples = st.checkbox("Small multiples (one chart per term)", value=False)
+    show_small_multiples = st.checkbox("Small multiples (one chart per term)", value=st.session_state.show_small_multiples)
+    # Update session state
+    st.session_state.show_small_multiples = show_small_multiples
 
     st.markdown("---")
     st.subheader("Advanced")
@@ -101,6 +121,12 @@ with st.sidebar:
             st.session_state.scales = None
             st.session_state.terms = None
             st.session_state.current_params = None
+            st.session_state.selected_yoy_term = None
+            st.session_state.selected_chart_terms = None
+            st.session_state.show_small_multiples = False
+            st.session_state.smoothing_days = "7"
+            st.session_state.start_date = None
+            st.session_state.end_date = None
             st.success("Cache cleared! Click 'Run' to reload data.")
             st.rerun()
     
@@ -486,9 +512,21 @@ if run:
 
     st.markdown("### Chart selection")
     default_terms = terms[:min(5, len(terms))]
-    selected_terms = st.multiselect("Terms to chart", options=terms, default=default_terms)
+    
+    # Use session state for selected terms, with fallback to defaults
+    if st.session_state.selected_chart_terms is None or not all(term in terms for term in st.session_state.selected_chart_terms):
+        st.session_state.selected_chart_terms = default_terms
+    
+    selected_terms = st.multiselect("Terms to chart", options=terms, default=st.session_state.selected_chart_terms)
     if not selected_terms:
         selected_terms = default_terms
+    
+    # Update session state with current selection
+    st.session_state.selected_chart_terms = selected_terms
+    
+    # Reset YoY term if it's no longer in the available terms
+    if st.session_state.selected_yoy_term and st.session_state.selected_yoy_term not in terms:
+        st.session_state.selected_yoy_term = terms[0] if terms else None
 
     if show_debug:
         st.info(f"Chart data shape: {long_df.shape}")
@@ -511,7 +549,15 @@ if run:
     st.markdown("---")
     st.subheader("Year-on-Year (YoY)")
 
-    yoy_term = st.selectbox("Pick a term for YoY analysis", options=terms, index=0)
+    # Use session state for YoY term selection, with fallback to first term
+    if st.session_state.selected_yoy_term is None or st.session_state.selected_yoy_term not in terms:
+        st.session_state.selected_yoy_term = terms[0] if terms else None
+    
+    yoy_term = st.selectbox("Pick a term for YoY analysis", options=terms, index=terms.index(st.session_state.selected_yoy_term) if st.session_state.selected_yoy_term in terms else 0)
+    
+    # Update session state with current selection
+    st.session_state.selected_yoy_term = yoy_term
+    
     yt = yoy_table(long_df, yoy_term)
 
     col1, col2 = st.columns(2)
