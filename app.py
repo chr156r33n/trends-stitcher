@@ -784,6 +784,17 @@ if run:
     
     yt = yoy_table(long_df, yoy_term)
     
+    # Show YoY data availability info
+    if not yt.empty:
+        first_with_prev = yt[yt['previous_year'].notna()]['date'].min()
+        if pd.notna(first_with_prev):
+            earliest_data = yt['date'].min()
+            st.info(f"📊 **YoY Data Available**: From {first_with_prev} onwards (earliest data: {earliest_data})")
+        else:
+            st.warning("⚠️ **No YoY data available** - insufficient historical data for year-over-year comparison")
+    else:
+        st.warning("⚠️ **No YoY data available** - no data found for selected term")
+
     # Debug YoY data
     if show_debug:
         st.subheader("🔍 YoY Debug Info")
@@ -798,6 +809,15 @@ if run:
             st.write(f"YoY non-null current values: {yt['current'].notna().sum()}")
             st.write(f"YoY non-null previous values: {yt['previous_year'].notna().sum()}")
             st.write(f"YoY non-null pct_diff values: {yt['pct_diff'].notna().sum()}")
+            
+            # Show the first date with previous year data
+            first_with_prev = yt[yt['previous_year'].notna()]['date'].min()
+            if pd.notna(first_with_prev):
+                st.write(f"📅 **First date with previous year data**: {first_with_prev}")
+                st.write(f"📅 **Earliest data available**: {yt['date'].min()}")
+                st.write(f"📅 **Gap**: No YoY data available for dates before {first_with_prev}")
+            else:
+                st.write("⚠️ **No previous year data found** - check if you have enough historical data")
 
     col1, col2 = st.columns(2)
     with col1:
