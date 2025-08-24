@@ -62,42 +62,102 @@ with st.sidebar:
     if st.button("🧪 Test Data Parsing"):
         st.subheader("Data Parsing Test")
         test_data_parsing()
+    
+    # Add import test button
+    if st.button("🔧 Test Imports"):
+        st.subheader("Import Test")
+        try:
+            import sys
+            st.write(f"Python path: {sys.path}")
+            st.write(f"Current directory: {os.getcwd()}")
+            
+            try:
+                import stitcher
+                st.success("✅ Successfully imported stitcher module")
+                st.write(f"stitcher module location: {stitcher.__file__}")
+            except Exception as e:
+                st.error(f"❌ Failed to import stitcher: {e}")
+                
+            try:
+                from stitcher import stitch_terms
+                st.success("✅ Successfully imported stitch_terms function")
+            except Exception as e:
+                st.error(f"❌ Failed to import stitch_terms: {e}")
+                
+            try:
+                from stitcher import TrendsFetcher
+                st.success("✅ Successfully imported TrendsFetcher class")
+            except Exception as e:
+                st.error(f"❌ Failed to import TrendsFetcher: {e}")
+                
+        except Exception as e:
+            st.error(f"❌ Import test failed: {e}")
+            st.code(traceback.format_exc())
 
 def test_data_parsing():
     """Test function to verify data parsing"""
-    import pandas as pd
-    from datetime import date
-    
-    # Test data similar to what you're getting from the API
-    test_data = [
-        {"date": "datetime.date(2025, 8, 24)", "term": "nike", "value": 74},
-        {"date": "datetime.date(2025, 8, 24)", "term": "adidas", "value": 45},
-        {"date": "datetime.date(2025, 8, 25)", "term": "nike", "value": 71},
-        {"date": "datetime.date(2025, 8, 25)", "term": "adidas", "value": 43},
-    ]
-    
-    # Test the date parsing
-    from stitcher import TrendsFetcher
-    for item in test_data:
-        parsed_date = TrendsFetcher._coerce_date(item["date"])
-        st.write(f"Original: {item['date']} -> Parsed: {parsed_date}")
-    
-    # Test DataFrame creation
-    df = pd.DataFrame(test_data)
-    st.write("Original DataFrame:")
-    st.write(df)
-    
-    # Test date conversion
-    df["date"] = pd.to_datetime(df["date"]).dt.date
-    st.write("After date conversion:")
-    st.write(df)
-    
-    # Test pivot
-    wide = df.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
-    st.write("Pivoted DataFrame:")
-    st.write(wide)
-    
-    return df, wide
+    try:
+        import pandas as pd
+        from datetime import date
+        
+        # Test data similar to what you're getting from the API
+        test_data = [
+            {"date": "datetime.date(2025, 8, 24)", "term": "nike", "value": 74},
+            {"date": "datetime.date(2025, 8, 24)", "term": "adidas", "value": 45},
+            {"date": "datetime.date(2025, 8, 25)", "term": "nike", "value": 71},
+            {"date": "datetime.date(2025, 8, 25)", "term": "adidas", "value": 43},
+        ]
+        
+        # Test Unix timestamp data (like what you're getting now)
+        unix_test_data = [
+            {"date": "1723939200", "term": "nike", "value": 74},
+            {"date": "1723939200", "term": "adidas", "value": 45},
+            {"date": "1724544000", "term": "nike", "value": 71},
+            {"date": "1724544000", "term": "adidas", "value": 43},
+        ]
+        
+        # Test the date parsing
+        try:
+            from stitcher import TrendsFetcher
+            st.success("✅ Successfully imported TrendsFetcher")
+            
+            st.subheader("Testing datetime.date string parsing:")
+            for item in test_data:
+                parsed_date = TrendsFetcher._coerce_date(item["date"])
+                st.write(f"Original: {item['date']} -> Parsed: {parsed_date}")
+            
+            st.subheader("Testing Unix timestamp parsing:")
+            for item in unix_test_data:
+                parsed_date = TrendsFetcher._coerce_date(item["date"])
+                st.write(f"Original: {item['date']} -> Parsed: {parsed_date}")
+                
+        except Exception as e:
+            st.error(f"❌ Failed to import or use TrendsFetcher: {e}")
+            st.code(traceback.format_exc())
+            return None, None
+        
+        # Test DataFrame creation with Unix timestamps
+        st.subheader("Testing DataFrame with Unix timestamps:")
+        df = pd.DataFrame(unix_test_data)
+        st.write("Original DataFrame:")
+        st.write(df)
+        
+        # Test date conversion
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        st.write("After date conversion:")
+        st.write(df)
+        
+        # Test pivot
+        wide = df.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
+        st.write("Pivoted DataFrame:")
+        st.write(wide)
+        
+        return df, wide
+        
+    except Exception as e:
+        st.error(f"❌ Test failed: {e}")
+        st.code(traceback.format_exc())
+        return None, None
 
 def test_api_connection(api_key: str) -> bool:
     """Simple test to verify API connectivity"""

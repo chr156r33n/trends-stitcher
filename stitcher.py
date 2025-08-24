@@ -355,7 +355,6 @@ class TrendsFetcher:
         # Debug logging
         import logging
         logger = logging.getLogger(__name__)
-        logger.debug(f"Coercing date from: {ts} (type: {type(ts)})")
         
         # Handle string representation of datetime.date objects
         if isinstance(ts, str):
@@ -385,10 +384,17 @@ class TrendsFetcher:
                 logger.debug(f"Failed to parse ISO date string {ts}: {e}")
                 pass
         
-        # Try Unix seconds
+        # Try Unix seconds (handle both int/float and string representations)
         try:
-            if isinstance(ts, (int, float)) and ts > 1000000000:
-                result = dt.datetime.utcfromtimestamp(int(ts)).date()
+            # Convert to float if it's a string
+            if isinstance(ts, str):
+                ts_float = float(ts)
+            else:
+                ts_float = float(ts)
+            
+            # Check if it's a reasonable Unix timestamp (after 2000, before 2100)
+            if 946684800 <= ts_float <= 4102444800:  # 2000-01-01 to 2100-01-01
+                result = dt.datetime.utcfromtimestamp(int(ts_float)).date()
                 logger.debug(f"Successfully parsed Unix timestamp: {ts} -> {result}")
                 return result
         except Exception as e:
@@ -404,8 +410,8 @@ class TrendsFetcher:
             logger.debug(f"Failed to parse with pandas {ts}: {e}")
             pass
             
-        # last resort: today
-        logger.warning(f"Could not parse date {ts}, using today's date")
+        # last resort: today - only warn if debug is enabled
+        logger.debug(f"Could not parse date {ts}, using today's date")
         return dt.date.today()
 
 
