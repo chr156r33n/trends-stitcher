@@ -208,7 +208,7 @@ def pairwise_ratios(df_long: pd.DataFrame) -> pd.DataFrame:
     out = []
     for (bid, date), g in df_long.groupby(["batch_id", "date"], sort=False):
         # single-date wide
-        w = g.pivot(index="date", columns="term", values="value")
+        w = g.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
         if w.empty:
             continue
         terms = list(w.columns)
