@@ -40,46 +40,73 @@ def _save_cache(path: str, data: Dict):
 # -----------------------
 
 class TrendsFetcher:
-    """
-    Fetches Google Trends interest-over-time via SerpAPI.
-    Each call can compare up to 5 terms. We normalize later across batches.
-    """
-    def __init__(self, serpapi_key: str, geo: str = "", timeframe: str = "today 12-m",
-                 cache_dir: str = ".cache", sleep_ms: int = 250):
+    """Fetches Google Trends interest-over-time via SerpAPI."""
+
+    def __init__(
+        self,
+        serpapi_key: str,
+        geo: str = "",
+        timeframe: str = "today 12-m",
+        cache_dir: str = ".cache",
+        sleep_ms: int = 250,
+        use_cache: bool = True,
+        debug: bool = False,
+    ) -> None:
         self.key = serpapi_key
         self.geo = geo
         self.timeframe = timeframe
         self.cache_dir = cache_dir
         self.sleep_ms = sleep_ms
+        self.use_cache = use_cache
+        self.debug = debug
+
+    def _log_debug(self, *args, **kwargs) -> None:
+        if not self.debug:
+            return
+        try:  # pragma: no cover - best effort
+            import streamlit as st
+
+            st.write(*args, **kwargs)
+        except Exception:
+            print(*args, **kwargs)
 
     def fetch_batch(self, terms: List[str]) -> pd.DataFrame:
         if len(terms) > 5:
             raise ValueError("Max 5 terms per Trends batch.")
-        print(f"[TrendsFetcher] fetching batch: {terms}")
+        self._log_debug(f"Fetching batch: {terms}")
         q = ",".join(terms)
         params = {
             "engine": "google_trends",
             "q": q,
             "data_type": "TIMESERIES",
             "time": self.timeframe,
-            "api_key": self.key
+            "api_key": self.key,
         }
         if self.geo:
             params["geo"] = self.geo
 
         cache_path = _mk_cache_path(self.cache_dir, params)
-        data = _load_cache(cache_path)
+        self._log_debug("Cache path", cache_path)
+        data = _load_cache(cache_path) if self.use_cache else None
         if data is None:
-            print("[TrendsFetcher] cache miss, requesting from API")
+            self._log_debug("Request params", params)
             r = requests.get("https://serpapi.com/search", params=params, timeout=60)
+            self._log_debug("HTTP status", r.status_code)
+            rate = r.headers.get("X-RateLimit-Remaining")
+            if rate is not None:
+                self._log_debug("X-RateLimit-Remaining", rate)
             r.raise_for_status()
             data = r.json()
-            _save_cache(cache_path, data)
-            # polite pause
+            err = data.get("error") or data.get("error_message")
+            if err:
+                raise RuntimeError(f"SerpAPI error: {err}")
+            self._log_debug("Response sample", json.dumps(data)[:200])
+            if self.use_cache:
+                _save_cache(cache_path, data)
             if self.sleep_ms > 0:
                 time.sleep(self.sleep_ms / 1000.0)
         else:
-            print("[TrendsFetcher] using cached data")
+            self._log_debug("Using cached data", cache_path)
 
         return self._parse_timeseries(data, terms)
 
@@ -330,6 +357,8 @@ def stitch_terms(
     cache_dir: str = ".cache",
     sleep_ms: int = 250,
     verbose: bool = True,
+    use_cache: bool = True,
+    debug: bool = False,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     """
     Main pipeline:
@@ -342,7 +371,15 @@ def stitch_terms(
     if verbose:
         print(f"[stitch_terms] Starting with {len(terms)} terms")
 
-    fetcher = TrendsFetcher(serpapi_key, geo=geo, timeframe=timeframe, cache_dir=cache_dir, sleep_ms=sleep_ms)
+    fetcher = TrendsFetcher(
+        serpapi_key,
+        geo=geo,
+        timeframe=timeframe,
+        cache_dir=cache_dir,
+        sleep_ms=sleep_ms,
+        use_cache=use_cache,
+        debug=debug,
+    )
     batches = make_batches(terms, group_size=group_size)
     if verbose:
         print(f"[stitch_terms] Created {len(batches)} batches")
