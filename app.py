@@ -22,8 +22,41 @@ try:  # pragma: no cover - best effort safeguard
 except Exception:
     pass
 
+# Initialize session state
+if 'data_loaded' not in st.session_state:
+    st.session_state.data_loaded = False
+if 'df_scaled' not in st.session_state:
+    st.session_state.df_scaled = None
+if 'pivot_scores' not in st.session_state:
+    st.session_state.pivot_scores = None
+if 'scales' not in st.session_state:
+    st.session_state.scales = None
+if 'terms' not in st.session_state:
+    st.session_state.terms = None
+if 'current_params' not in st.session_state:
+    st.session_state.current_params = None
+
 st.set_page_config(page_title="Trends Stitcher", layout="wide")
 st.title("Google Trends: Auto-Stitched Comparable Scale")
+
+# Show cache status
+if st.session_state.data_loaded:
+    st.success(f"✅ Data loaded: {len(st.session_state.terms) if st.session_state.terms else 0} terms, {st.session_state.df_scaled.shape[0] if st.session_state.df_scaled is not None else 0} data points")
+else:
+    st.info("📊 No data loaded. Enter parameters and click 'Run' to fetch data.")
+
+def get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache):
+    """Get current parameters as a hashable tuple for comparison"""
+    terms = tuple(sorted([t.strip() for t in terms_text.splitlines() if t.strip()]))
+    return (serpapi_key, terms, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache)
+
+def should_reload_data(current_params):
+    """Check if we need to reload data based on parameter changes"""
+    if not st.session_state.data_loaded:
+        return True
+    if st.session_state.current_params != current_params:
+        return True
+    return False
 
 # Sidebar
 with st.sidebar:
@@ -57,6 +90,24 @@ with st.sidebar:
     verbose_logs = st.checkbox("Verbose logging", value=False)
 
     run = st.button("Run")
+    
+    # Add cache management buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🗑️ Clear Cache"):
+            st.session_state.data_loaded = False
+            st.session_state.df_scaled = None
+            st.session_state.pivot_scores = None
+            st.session_state.scales = None
+            st.session_state.terms = None
+            st.session_state.current_params = None
+            st.success("Cache cleared! Click 'Run' to reload data.")
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Force Reload"):
+            st.session_state.data_loaded = False
+            st.success("Forcing reload on next run...")
     
     # Add test button
     if st.button("🧪 Test Data Parsing"):
@@ -185,6 +236,20 @@ def infer_step_days(dates: pd.Series) -> float:
     diffs = d.diff().dropna().dt.days.to_numpy()
     return float(np.median(diffs)) if len(diffs) else 1.0
 
+def filter_date_range(df_scaled: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
+    df = df_scaled.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    if start_date:
+        df = df[df["date"] >= pd.to_datetime(start_date)]
+    if end_date:
+        df = df[df["date"] <= pd.to_datetime(end_date)]
+    return df
+
+@st.cache_data
+def cached_filter_date_range(df_scaled: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
+    """Cached version of date range filtering"""
+    return filter_date_range(df_scaled, start_date, end_date)
+
 def apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFrame:
     if smoothing_days == "None":
         return df_scaled
@@ -198,19 +263,20 @@ def apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFram
         wide[col] = wide[col].rolling(window=periods, min_periods=max(1, periods // 2)).mean()
     return wide.reset_index()
 
-def filter_date_range(df_scaled: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
-    df = df_scaled.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    if start_date:
-        df = df[df["date"] >= pd.to_datetime(start_date)]
-    if end_date:
-        df = df[df["date"] <= pd.to_datetime(end_date)]
-    return df
+@st.cache_data
+def cached_apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFrame:
+    """Cached version of smoothing"""
+    return apply_smoothing(df_scaled, smoothing_days)
 
 def melt_long(df_scaled: pd.DataFrame) -> pd.DataFrame:
     long = df_scaled.melt(id_vars=["date"], var_name="term", value_name="value")
     long["date"] = pd.to_datetime(long["date"])
     return long
+
+@st.cache_data
+def cached_melt_long(df_scaled: pd.DataFrame) -> pd.DataFrame:
+    """Cached version of melt operation"""
+    return melt_long(df_scaled)
 
 def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     g = long_df[long_df["term"] == term].sort_values("date").copy()
@@ -247,6 +313,25 @@ def line_chart_multi(long_df: pd.DataFrame, selected_terms: list, title: str):
     )
     st.altair_chart(chart, use_container_width=True)
 
+@st.cache_data
+def create_line_chart(data, selected_terms, title):
+    """Cached version of line chart creation"""
+    if data.empty:
+        return None
+    chart = (
+        alt.Chart(data)
+        .mark_line()
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y("value:Q", title="Comparable Index (max=100 overall)"),
+            color=alt.Color("term:N", legend=alt.Legend(title="Term")),
+            tooltip=["date:T", "term:N", alt.Tooltip("value:Q", format=".2f")]
+        )
+        .properties(title=title, height=380)
+        .interactive()
+    )
+    return chart
+
 def small_multiples(long_df: pd.DataFrame, all_terms: list):
     data = long_df[long_df["term"].isin(all_terms)]
     if data.empty:
@@ -267,6 +352,26 @@ def small_multiples(long_df: pd.DataFrame, all_terms: list):
     )
     st.altair_chart(chart, use_container_width=True)
 
+@st.cache_data
+def create_small_multiples(data, all_terms):
+    """Cached version of small multiples chart creation"""
+    if data.empty:
+        return None
+    chart = (
+        alt.Chart(data)
+        .mark_line()
+        .encode(
+            x=alt.X("date:T", title=""),
+            y=alt.Y("value:Q", title="Index"),
+            facet=alt.Facet("term:N", columns=4),
+            tooltip=["date:T", "term:N", alt.Tooltip("value:Q", format=".2f")]
+        )
+        .resolve_scale(y="independent")
+        .properties(title="Small multiples (per term)", height=150)
+        .interactive()
+    )
+    return chart
+
 if run:
     if not serpapi_key:
         st.error("Please enter your SerpAPI key.")
@@ -285,60 +390,78 @@ if run:
         st.error("Enter at least two terms.")
         st.stop()
 
-    with st.spinner("Fetching, stitching, and preparing views..."):
-        try:
-            # Add debug info
-            if show_debug:
-                st.info(f"Starting with {len(terms)} terms: {terms}")
-                st.info(f"Cache dir: {cache_dir}")
-                st.info(f"Using cache: {use_cache}")
-            
-            df_scaled, pivot_scores, scales = stitch_terms(
-                serpapi_key=serpapi_key,
-                terms=terms,
-                geo=geo,
-                timeframe=timeframe,
-                group_size=group_size,
-                cache_dir=cache_dir,
-                sleep_ms=int(sleep_ms),
-                verbose=verbose_logs,
-                use_cache=use_cache,
-                debug=show_debug,
-            )
-
-            if show_debug:
-                st.success(f"Successfully fetched data: {df_scaled.shape}")
-                st.info(f"Data columns: {list(df_scaled.columns)}")
-                st.info(f"Date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+    current_params = get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache)
+    if should_reload_data(current_params):
+        with st.spinner("Fetching, stitching, and preparing views..."):
+            try:
+                # Add debug info
+                if show_debug:
+                    st.info(f"Starting with {len(terms)} terms: {terms}")
+                    st.info(f"Cache dir: {cache_dir}")
+                    st.info(f"Using cache: {use_cache}")
                 
-                # Show raw API response for debugging
-                st.subheader("🔍 Raw API Response Debug")
-                try:
-                    from stitcher import TrendsFetcher
-                    fetcher = TrendsFetcher(
-                        serpapi_key=serpapi_key,
-                        geo=geo,
-                        timeframe=timeframe,
-                        cache_dir=cache_dir,
-                        sleep_ms=int(sleep_ms),
-                        use_cache=False,  # Force fresh request
-                        debug=True,
-                    )
-                    test_df = fetcher.fetch_batch(terms[:2])  # Test with first 2 terms
-                    st.success(f"Test API call successful: {test_df.shape}")
-                    st.json(test_df.head(10).to_dict('records'))
-                except Exception as debug_e:
-                    st.error(f"Debug API call failed: {debug_e}")
-                    st.code(traceback.format_exc())
+                df_scaled, pivot_scores, scales = stitch_terms(
+                    serpapi_key=serpapi_key,
+                    terms=terms,
+                    geo=geo,
+                    timeframe=timeframe,
+                    group_size=group_size,
+                    cache_dir=cache_dir,
+                    sleep_ms=int(sleep_ms),
+                    verbose=verbose_logs,
+                    use_cache=use_cache,
+                    debug=show_debug,
+                )
 
-            df_scaled = filter_date_range(df_scaled, start_date, end_date)
-            df_scaled = apply_smoothing(df_scaled, smoothing_days)
-        except Exception as e:
-            st.error(f"Error during data fetching: {str(e)}")
-            if show_debug:
-                st.write("Full traceback:")
-                st.code(traceback.format_exc())
-            st.stop()
+                if show_debug:
+                    st.success(f"Successfully fetched data: {df_scaled.shape}")
+                    st.info(f"Data columns: {list(df_scaled.columns)}")
+                    st.info(f"Date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+                    
+                    # Show raw API response for debugging
+                    st.subheader("🔍 Raw API Response Debug")
+                    try:
+                        from stitcher import TrendsFetcher
+                        fetcher = TrendsFetcher(
+                            serpapi_key=serpapi_key,
+                            geo=geo,
+                            timeframe=timeframe,
+                            cache_dir=cache_dir,
+                            sleep_ms=int(sleep_ms),
+                            use_cache=False,  # Force fresh request
+                            debug=True,
+                        )
+                        test_df = fetcher.fetch_batch(terms[:2])  # Test with first 2 terms
+                        st.success(f"Test API call successful: {test_df.shape}")
+                        st.json(test_df.head(10).to_dict('records'))
+                    except Exception as debug_e:
+                        st.error(f"Debug API call failed: {debug_e}")
+                        st.code(traceback.format_exc())
+
+                # Store in session state
+                st.session_state.df_scaled = df_scaled
+                st.session_state.pivot_scores = pivot_scores
+                st.session_state.scales = scales
+                st.session_state.terms = terms
+                st.session_state.data_loaded = True
+                st.session_state.current_params = current_params
+                
+            except Exception as e:
+                st.error(f"Error during data fetching: {str(e)}")
+                if show_debug:
+                    st.write("Full traceback:")
+                    st.code(traceback.format_exc())
+                st.stop()
+    else:
+        st.info("✅ Using cached data. Change parameters to reload.")
+        df_scaled = st.session_state.df_scaled
+        pivot_scores = st.session_state.pivot_scores
+        scales = st.session_state.scales
+        terms = st.session_state.terms
+
+    # Apply filters to the data
+    df_scaled = cached_filter_date_range(df_scaled, start_date, end_date)
+    df_scaled = cached_apply_smoothing(df_scaled, smoothing_days)
 
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
     st.caption("Consensus scaling + optional smoothing + date filtering.")
@@ -350,7 +473,7 @@ if run:
         mime="text/csv"
     )
 
-    long_df = melt_long(df_scaled)
+    long_df = cached_melt_long(df_scaled)
 
     # Validate data before charting
     if long_df.empty:
@@ -373,9 +496,17 @@ if run:
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
     if show_small_multiples:
-        small_multiples(long_df, terms)
+        chart = create_small_multiples(long_df, terms)
+        if chart:
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("No data to plot.")
     else:
-        line_chart_multi(long_df, selected_terms, "All Terms (selected)")
+        chart = create_line_chart(long_df, selected_terms, "All Terms (selected)")
+        if chart:
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.info("No data to plot for the selected terms.")
 
     st.markdown("---")
     st.subheader("Year-on-Year (YoY)")
