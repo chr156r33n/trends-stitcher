@@ -1131,14 +1131,14 @@ if run:
             # Handle cases where min_val is 0 (no data for that term)
             if min_val == 0:
                 st.warning(f"**Data Notice:** '{min_term}' has no search data in Google Trends (all values are 0). This term will not appear in the chart above.")
-                st.info("**Tip:** Try the 'Autocomplete Explorer' below to find alternative search terms, or check if the term is spelled correctly.")
+                st.info("**Tip:** Try the 'Autocomplete Explorer' in the sidebar to find alternative search terms, or check if the term is spelled correctly.")
             else:
                 ratio = max_val / min_val
                 
                 # Show user-friendly popularity analysis
                 if ratio > 100:
                     st.warning(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}' in Google Trends. The less popular terms may appear near-zero in the chart above due to scaling.")
-                    st.info("**Tip:** Try the 'Autocomplete Explorer' below to find more comparable terms, or group terms with similar popularity levels.")
+                    st.info("**Tip:** Try the 'Autocomplete Explorer' in the sidebar to find more comparable terms, or group terms with similar popularity levels.")
                 elif ratio > 50:
                     st.info(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}'. Some terms may be hard to see in the chart due to scaling differences.")
                 elif ratio > 10:
@@ -1157,20 +1157,6 @@ if run:
         mime="text/csv",
         key="full_timeseries_download"
     )
-    
-    st.markdown("---")
-    st.subheader("Trends Autocomplete Explorer")
-    st.caption("Discover better search terms and entities for more accurate trend data. Entity-based searches often provide more comprehensive results than simple keyword searches.")
-    
-    # Add autocomplete exploration section
-    if st.button("Explore Autocomplete Options", key="autocomplete_button"):
-        if serpapi_key and terms:
-            with st.spinner("Fetching autocomplete suggestions..."):
-                explore_autocomplete_options(terms, serpapi_key)
-        elif not serpapi_key:
-            st.error("Please enter your SerpAPI key first.")
-        else:
-            st.error("No terms available. Please run the analysis first.")
     
     st.markdown("---")
     st.subheader("Year-on-Year (YoY) Analysis")
