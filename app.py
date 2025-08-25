@@ -649,6 +649,7 @@ def create_small_multiples(data, all_terms):
 def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     """
     Create a YoY chart with month on X-axis and lines for each year.
+    Defaults to showing past 5 years of data.
     """
     # Get YoY data for the term
     yt = yoy_table(long_df, term)
@@ -662,14 +663,30 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     if yt_valid.empty:
         return None
     
+    # Filter to past 5 years (or less if not enough data)
+    latest_date = yt_valid['date'].max()
+    five_years_ago = latest_date - pd.Timedelta(days=5*365)
+    
+    # Get the actual earliest date in the data
+    earliest_date = yt_valid['date'].min()
+    
+    # Use the later of: 5 years ago or earliest available data
+    start_date = max(five_years_ago, earliest_date)
+    
+    # Filter to the selected date range
+    yt_filtered = yt_valid[yt_valid['date'] >= start_date].copy()
+    
+    if yt_filtered.empty:
+        return None
+    
     # Extract month and year for visualization
-    yt_valid['month'] = yt_valid['date'].dt.month
-    yt_valid['month_name'] = yt_valid['date'].dt.strftime('%b')  # Jan, Feb, etc.
-    yt_valid['year'] = yt_valid['date'].dt.year
+    yt_filtered['month'] = yt_filtered['date'].dt.month
+    yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_filtered['year'] = yt_filtered['date'].dt.year
     
     # Create the chart
     chart = (
-        alt.Chart(yt_valid)
+        alt.Chart(yt_filtered)
         .mark_line(point=True)
         .encode(
             x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
@@ -685,7 +702,7 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
             ]
         )
         .properties(
-            title=f'{term} - Year-over-Year % Difference by Month',
+            title=f'{term} - YoY % Difference by Month ({start_date.strftime("%Y")}-{latest_date.strftime("%Y")})',
             height=300,
             width=400
         )
@@ -698,6 +715,7 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
 def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     """
     Create a YoY chart showing absolute differences with month on X-axis.
+    Defaults to showing past 5 years of data.
     """
     # Get YoY data for the term
     yt = yoy_table(long_df, term)
@@ -711,14 +729,30 @@ def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     if yt_valid.empty:
         return None
     
+    # Filter to past 5 years (or less if not enough data)
+    latest_date = yt_valid['date'].max()
+    five_years_ago = latest_date - pd.Timedelta(days=5*365)
+    
+    # Get the actual earliest date in the data
+    earliest_date = yt_valid['date'].min()
+    
+    # Use the later of: 5 years ago or earliest available data
+    start_date = max(five_years_ago, earliest_date)
+    
+    # Filter to the selected date range
+    yt_filtered = yt_valid[yt_valid['date'] >= start_date].copy()
+    
+    if yt_filtered.empty:
+        return None
+    
     # Extract month and year for visualization
-    yt_valid['month'] = yt_valid['date'].dt.month
-    yt_valid['month_name'] = yt_valid['date'].dt.strftime('%b')  # Jan, Feb, etc.
-    yt_valid['year'] = yt_valid['date'].dt.year
+    yt_filtered['month'] = yt_filtered['date'].dt.month
+    yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_filtered['year'] = yt_filtered['date'].dt.year
     
     # Create the chart
     chart = (
-        alt.Chart(yt_valid)
+        alt.Chart(yt_filtered)
         .mark_line(point=True)
         .encode(
             x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
@@ -734,7 +768,7 @@ def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
             ]
         )
         .properties(
-            title=f'{term} - Year-over-Year Absolute Difference by Month',
+            title=f'{term} - YoY Absolute Difference by Month ({start_date.strftime("%Y")}-{latest_date.strftime("%Y")})',
             height=300,
             width=400
         )
@@ -938,7 +972,7 @@ if run:
 
     # Create YoY charts for all terms
     st.subheader("YoY % Difference by Month")
-    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year.")
+    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year. Defaults to past 5 years of data.")
     
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(3, len(terms))
@@ -955,7 +989,7 @@ if run:
 
     # Create YoY absolute difference charts for all terms
     st.subheader("YoY Absolute Difference by Month")
-    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year.")
+    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year. Defaults to past 5 years of data.")
     
     for i in range(0, len(terms), charts_per_row):
         cols = st.columns(charts_per_row)
@@ -970,13 +1004,26 @@ if run:
     # Download all YoY data
     st.subheader("Download YoY Data")
     all_yoy_data = {}
+    all_yoy_data_filtered = {}
+    
     for term in terms:
         yt = yoy_table(long_df, term)
         if not yt.empty:
             all_yoy_data[term] = yt
+            
+            # Create filtered version (past 5 years)
+            yt_valid = yt.dropna(subset=['pct_diff']).copy()
+            if not yt_valid.empty:
+                latest_date = yt_valid['date'].max()
+                five_years_ago = latest_date - pd.Timedelta(days=5*365)
+                earliest_date = yt_valid['date'].min()
+                start_date = max(five_years_ago, earliest_date)
+                yt_filtered = yt_valid[yt_valid['date'] >= start_date].copy()
+                if not yt_filtered.empty:
+                    all_yoy_data_filtered[term] = yt_filtered
     
     if all_yoy_data:
-        # Create combined CSV
+        # Create combined CSV for all data
         combined_data = []
         for term, yt in all_yoy_data.items():
             yt_copy = yt.copy()
@@ -986,14 +1033,43 @@ if run:
         if combined_data:
             combined_df = pd.concat(combined_data, ignore_index=True)
             st.download_button(
-                "Download All YoY Data (CSV)",
+                "Download All YoY Data (Full History)",
                 combined_df.to_csv(index=False).encode("utf-8"),
-                file_name="all_yoy_data.csv",
+                file_name="all_yoy_data_full.csv",
                 mime="text/csv"
             )
             
             # Show sample of combined data
+            st.write("**Full YoY Data Sample:**")
             st.dataframe(combined_df.head(20))
+    
+    if all_yoy_data_filtered:
+        # Create combined CSV for filtered data (past 5 years)
+        combined_filtered_data = []
+        for term, yt in all_yoy_data_filtered.items():
+            yt_copy = yt.copy()
+            yt_copy['term'] = term
+            combined_filtered_data.append(yt_copy)
+        
+        if combined_filtered_data:
+            combined_filtered_df = pd.concat(combined_filtered_data, ignore_index=True)
+            
+            # Show date range info
+            if not combined_filtered_df.empty:
+                date_range_start = combined_filtered_df['date'].min()
+                date_range_end = combined_filtered_df['date'].max()
+                st.info(f"📅 **5-Year YoY Data Range**: {date_range_start.strftime('%Y-%m-%d')} to {date_range_end.strftime('%Y-%m-%d')}")
+            
+            st.download_button(
+                "Download YoY Data (Past 5 Years)",
+                combined_filtered_df.to_csv(index=False).encode("utf-8"),
+                file_name="yoy_data_past_5_years.csv",
+                mime="text/csv"
+            )
+            
+            # Show sample of filtered data
+            st.write("**5-Year YoY Data Sample:**")
+            st.dataframe(combined_filtered_df.head(20))
 
     st.markdown("---")
     st.subheader("Explainability")
