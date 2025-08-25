@@ -1170,9 +1170,8 @@ if run:
     # Get original maximum values from the data
     original_max_values = {}
     for term in terms:
-        term_data = long_df[long_df['term'] == term]['value']
-        if not term_data.empty:
-            original_max_values[term] = term_data.max()
+        if term in df_scaled.columns:
+            original_max_values[term] = df_scaled[term].max()
         else:
             original_max_values[term] = 0
     
