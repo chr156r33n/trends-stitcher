@@ -1206,6 +1206,7 @@ if run:
 
 
     st.markdown("---")
+    st.write("🔍 TEST 0: This should appear before explainability table")
     st.subheader("Explainability")
     st.caption("This table shows how the scaling algorithm adjusted each term's maximum value to make all terms comparable. It helps verify that the data normalization worked correctly.")
     st.dataframe(pivot_scores)
@@ -1227,6 +1228,9 @@ if run:
         file_name="scale_factors.csv",
         mime="text/csv"
     )
+    
+    # TEST: Simple message right after scale factors
+    st.write("🔍 TEST 1: This should appear right after scale factors table")
     
     # TEST: Simple heading that should always appear
     st.subheader("🧪 TEST SECTION - This should always appear")
