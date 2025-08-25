@@ -8,6 +8,92 @@ import altair as alt
 
 from stitcher import stitch_terms
 
+def explore_autocomplete_options(terms: list, api_key: str):
+    """Explore autocomplete options for each term to find better entity-based searches"""
+    from serpapi import GoogleSearch
+    
+    st.subheader("Autocomplete Suggestions")
+    st.caption("Below are the autocomplete suggestions for each of your terms. Entity-based searches (marked as 'Topic' or specific entity types) often provide better trend data than simple keyword searches.")
+    
+    all_suggestions = {}
+    
+    for term in terms:
+        st.write(f"**{term}**")
+        
+        try:
+            params = {
+                "api_key": api_key,
+                "engine": "google_trends_autocomplete",
+                "q": term
+            }
+            
+            search = GoogleSearch(params)
+            results = search.get_dict()
+            
+            if "suggestions" in results and results["suggestions"]:
+                suggestions = results["suggestions"]
+                all_suggestions[term] = suggestions
+                
+                # Create a DataFrame for better display
+                suggestion_data = []
+                for i, suggestion in enumerate(suggestions):
+                    suggestion_data.append({
+                        "Option": i + 1,
+                        "Query": suggestion.get("q", ""),
+                        "Title": suggestion.get("title", ""),
+                        "Type": suggestion.get("type", ""),
+                        "Link": suggestion.get("link", "")
+                    })
+                
+                df = pd.DataFrame(suggestion_data)
+                st.dataframe(df, use_container_width=True)
+                
+                # Add download button for this term's suggestions
+                csv_data = df.to_csv(index=False)
+                st.download_button(
+                    f"Download {term} suggestions CSV",
+                    csv_data.encode("utf-8"),
+                    file_name=f"autocomplete_{term.replace(' ', '_')}.csv",
+                    mime="text/csv"
+                )
+                
+            else:
+                st.info(f"No autocomplete suggestions found for '{term}'")
+                
+        except Exception as e:
+            st.error(f"Error fetching autocomplete for '{term}': {str(e)}")
+        
+        st.write("---")
+    
+    # Create combined download for all suggestions
+    if all_suggestions:
+        st.subheader("Download All Suggestions")
+        combined_data = []
+        for term, suggestions in all_suggestions.items():
+            for suggestion in suggestions:
+                combined_data.append({
+                    "Original Term": term,
+                    "Query": suggestion.get("q", ""),
+                    "Title": suggestion.get("title", ""),
+                    "Type": suggestion.get("type", ""),
+                    "Link": suggestion.get("link", "")
+                })
+        
+        combined_df = pd.DataFrame(combined_data)
+        st.download_button(
+            "Download All Autocomplete Suggestions CSV",
+            combined_df.to_csv(index=False).encode("utf-8"),
+            file_name="all_autocomplete_suggestions.csv",
+            mime="text/csv"
+        )
+        
+        # Show summary statistics
+        st.subheader("Summary")
+        type_counts = combined_df["Type"].value_counts()
+        st.write("**Suggestion types found:**")
+        for suggestion_type, count in type_counts.items():
+            st.write(f"- {suggestion_type}: {count} suggestions")
+
 # If this script is executed with `python app.py` instead of
 # `streamlit run app.py`, re-launch it via the Streamlit CLI so the
 # interactive app works as expected.
@@ -215,94 +301,13 @@ with st.sidebar:
         if st.button("🔄 Force Reload"):
             st.session_state.data_loaded = False
             st.success("Forcing reload on next run...")
-    
-def explore_autocomplete_options(terms: list, api_key: str):
-    """Explore autocomplete options for each term to find better entity-based searches"""
-    from serpapi import GoogleSearch
-    
-    st.subheader("Autocomplete Suggestions")
-    st.caption("Below are the autocomplete suggestions for each of your terms. Entity-based searches (marked as 'Topic' or specific entity types) often provide better trend data than simple keyword searches.")
-    
-    all_suggestions = {}
-    
-    for term in terms:
-        st.write(f"**{term}**")
-        
-        try:
-            params = {
-                "api_key": api_key,
-                "engine": "google_trends_autocomplete",
-                "q": term
-            }
-            
-            search = GoogleSearch(params)
-            results = search.get_dict()
-            
-            if "suggestions" in results and results["suggestions"]:
-                suggestions = results["suggestions"]
-                all_suggestions[term] = suggestions
-                
-                # Create a DataFrame for better display
-                suggestion_data = []
-                for i, suggestion in enumerate(suggestions):
-                    suggestion_data.append({
-                        "Option": i + 1,
-                        "Query": suggestion.get("q", ""),
-                        "Title": suggestion.get("title", ""),
-                        "Type": suggestion.get("type", ""),
-                        "Link": suggestion.get("link", "")
-                    })
-                
-                df = pd.DataFrame(suggestion_data)
-                st.dataframe(df, use_container_width=True)
-                
-                # Add download button for this term's suggestions
-                csv_data = df.to_csv(index=False)
-                st.download_button(
-                    f"Download {term} suggestions CSV",
-                    csv_data.encode("utf-8"),
-                    file_name=f"autocomplete_{term.replace(' ', '_')}.csv",
-                    mime="text/csv"
-                )
-                
-            else:
-                st.info(f"No autocomplete suggestions found for '{term}'")
-                
-        except Exception as e:
-            st.error(f"Error fetching autocomplete for '{term}': {str(e)}")
-        
-        st.write("---")
-    
-    # Create combined download for all suggestions
-    if all_suggestions:
-        st.subheader("Download All Suggestions")
-        combined_data = []
-        for term, suggestions in all_suggestions.items():
-            for suggestion in suggestions:
-                combined_data.append({
-                    "Original Term": term,
-                    "Query": suggestion.get("q", ""),
-                    "Title": suggestion.get("title", ""),
-                    "Type": suggestion.get("type", ""),
-                    "Link": suggestion.get("link", "")
-                })
-        
-        combined_df = pd.DataFrame(combined_data)
-        st.download_button(
-            "Download All Autocomplete Suggestions CSV",
-            combined_df.to_csv(index=False).encode("utf-8"),
-            file_name="all_autocomplete_suggestions.csv",
-            mime="text/csv"
-        )
-        
-        # Show summary statistics
-        st.subheader("Summary")
-        type_counts = combined_df["Type"].value_counts()
-        st.write("**Suggestion types found:**")
-        for suggestion_type, count in type_counts.items():
-            st.write(f"- {suggestion_type}: {count} suggestions")
 
 def infer_step_days(dates: pd.Series) -> float:
+    d = pd.to_datetime(dates).sort_values().drop_duplicates()
+    if len(d) < 2:
+        return 1.0
+    diffs = d.diff().dropna().dt.days.to_numpy()
+    return float(np.median(diffs)) if len(diffs) else 1.0
     d = pd.to_datetime(dates).sort_values().drop_duplicates()
     if len(d) < 2:
         return 1.0
