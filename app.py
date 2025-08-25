@@ -527,6 +527,13 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     # Convert dates to datetime if they aren't already
     g["date"] = pd.to_datetime(g["date"])
     
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(f"YoY calculation for term: {term}")
+    logger.debug(f"Data range: {g['date'].min()} to {g['date'].max()}")
+    logger.debug(f"Total data points: {len(g)}")
+    
     # Create a lookup table for previous year data
     # For each date in the data, calculate what the previous year date should be
     g["prev_year_date"] = g["date"] - pd.Timedelta(days=365)
@@ -537,6 +544,11 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     # For each row, look up the value from exactly 365 days ago
     g["prior_value"] = g["prev_year_date"].map(date_value_map)
     
+    # Debug: Show some examples of the mapping
+    logger.debug(f"Sample date mappings:")
+    for i, row in g.head(5).iterrows():
+        logger.debug(f"  {row['date']} -> prev_year_date: {row['prev_year_date']} -> value: {row['prior_value']}")
+    
     # Calculate differences
     g["abs_diff"] = g["value"] - g["prior_value"]
     g["pct_diff"] = np.where(
@@ -544,6 +556,10 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
         (g["abs_diff"] / g["prior_value"]) * 100.0,
         np.nan
     )
+    
+    # Debug: Show summary statistics
+    valid_prev_year = g["prior_value"].notna().sum()
+    logger.debug(f"Valid previous year matches: {valid_prev_year} out of {len(g)}")
     
     # Return the result with proper column names
     result = g[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
