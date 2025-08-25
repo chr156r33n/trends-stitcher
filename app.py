@@ -142,14 +142,14 @@ if 'end_date' not in st.session_state:
 if 'timeframe' not in st.session_state:
     st.session_state.timeframe = "all"
 
-st.set_page_config(page_title="Trends Stitcher", layout="wide")
-st.title("Google Trends: Auto-Stitched Comparable Scale")
+st.set_page_config(page_title="Google Trend Stitcher", layout="wide")
+st.title("Google Trend Stitcher")
 
 # Show cache status
 if st.session_state.data_loaded:
-    st.success(f"✅ Data loaded: {len(st.session_state.terms) if st.session_state.terms else 0} terms, {st.session_state.df_scaled.shape[0] if st.session_state.df_scaled is not None else 0} data points")
+    st.success(f"Data loaded: {len(st.session_state.terms) if st.session_state.terms else 0} terms, {st.session_state.df_scaled.shape[0] if st.session_state.df_scaled is not None else 0} data points")
 else:
-    st.info("📊 No data loaded. Enter parameters and click 'Run' to fetch data.")
+    st.info("No data loaded. Enter parameters and click 'Run' to fetch data.")
 
 def get_suggested_timeframe(start_date, end_date):
     """Suggest the best timeframe based on date filters"""
@@ -216,7 +216,7 @@ with st.sidebar:
     if st.session_state.start_date or st.session_state.end_date:
         # If user has set date filters, suggest a longer timeframe
         suggested_timeframe = get_suggested_timeframe(st.session_state.start_date, st.session_state.end_date)
-        st.info(f"📅 Date filters detected. Using longer timeframe ({suggested_timeframe}) to get more data for filtering.")
+        st.info(f"Date filters detected. Using longer timeframe ({suggested_timeframe}) to get more data for filtering.")
         current_timeframe = st.session_state.timeframe if st.session_state.timeframe in timeframe_options else suggested_timeframe
         timeframe = st.selectbox("API Timeframe", timeframe_options, index=timeframe_options.index(current_timeframe))
     else:
@@ -234,7 +234,7 @@ with st.sidebar:
     # Add cache management buttons
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🗑️ Clear Cache"):
+        if st.button("Clear Cache"):
             st.session_state.data_loaded = False
             st.session_state.df_scaled = None
             st.session_state.pivot_scores = None
@@ -253,12 +253,12 @@ with st.sidebar:
             st.rerun()
     
     with col2:
-        if st.button("🔄 Force Reload"):
+        if st.button("Force Reload"):
             st.session_state.data_loaded = False
             st.success("Forcing reload on next run...")
 
     st.markdown("---")
-    st.subheader("🔍 Autocomplete Explorer")
+    st.subheader("Autocomplete Explorer")
     st.caption("Discover better search terms and entities")
     
     if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
@@ -287,17 +287,17 @@ with st.sidebar:
     
     # Add warning about timeframe vs date filtering
     if start_date or end_date:
-        st.info("💡 **Note**: Date filtering works on the data returned by the API. To get more data for filtering, consider using a longer timeframe (e.g., 'today 5-y' instead of 'today 12-m').")
+        st.info("**Note**: Date filtering works on the data returned by the API. To get more data for filtering, consider using a longer timeframe (e.g., 'today 5-y' instead of 'today 12-m').")
     
     # Add button to set maximum timeframe for date filtering
     if start_date or end_date:
-        if st.button("🔄 Set Maximum Timeframe for Date Filtering"):
+        if st.button("Set Maximum Timeframe for Date Filtering"):
             st.session_state.timeframe = "all"
             st.success("Set timeframe to maximum ('all') for better date filtering!")
             st.rerun()
     
     st.markdown("---")
-    with st.expander("⚙️ Advanced Options", expanded=False):
+    with st.expander("Advanced Options", expanded=False):
         st.subheader("Advanced")
         # Use temp directory for cloud environments
         import tempfile
@@ -308,6 +308,10 @@ with st.sidebar:
         use_cache = st.checkbox("Use cache", value=True)
         show_debug = st.checkbox("Show debug logs", value=False)
         verbose_logs = st.checkbox("Verbose logging", value=False)
+
+    # Add link to blog post at bottom of sidebar
+    st.markdown("---")
+    st.markdown("[Learn more about Trend Stitching](https://www.chris-green.net/post/trends-stitcher)")
 
 def infer_step_days(dates: pd.Series) -> float:
     d = pd.to_datetime(dates).sort_values().drop_duplicates()
@@ -862,7 +866,7 @@ if run:
                     st.info(f"Date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
                     
                     # Show raw API response for debugging
-                    st.subheader("🔍 Raw API Response Debug")
+                    st.subheader("Raw API Response Debug")
                     try:
                         from stitcher import TrendsFetcher
                         fetcher = TrendsFetcher(
@@ -896,7 +900,7 @@ if run:
                     st.code(traceback.format_exc())
                 st.stop()
     else:
-        st.info("✅ Using cached data. Change parameters to reload.")
+        st.info("Using cached data. Change parameters to reload.")
         df_scaled = st.session_state.df_scaled
         pivot_scores = st.session_state.pivot_scores
         scales = st.session_state.scales
@@ -904,7 +908,7 @@ if run:
 
     # Apply filters to the data
     if show_debug:
-        st.subheader("🔍 Date Filtering Debug")
+        st.subheader("Date Filtering Debug")
         st.write(f"Original data shape: {df_scaled.shape}")
         st.write(f"Original date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
         st.write(f"Start date filter: {start_date}")
@@ -935,7 +939,7 @@ if run:
         st.info(f"Available terms: {long_df['term'].unique()}")
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
-    st.caption("💡 **Tip**: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
+    st.caption("Tip: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
     chart = create_line_chart(long_df, terms, "All Terms (click legend to filter)")
     if chart:
         st.altair_chart(chart, use_container_width=True)
@@ -959,7 +963,7 @@ if run:
     st.caption("Discover better search terms and entities for more accurate trend data. Entity-based searches often provide more comprehensive results than simple keyword searches.")
     
     # Add autocomplete exploration section
-    if st.button("🔍 Explore Autocomplete Options", key="autocomplete_button"):
+    if st.button("Explore Autocomplete Options", key="autocomplete_button"):
         if serpapi_key and terms:
             with st.spinner("Fetching autocomplete suggestions..."):
                 explore_autocomplete_options(terms, serpapi_key)
@@ -988,13 +992,13 @@ if run:
     available_terms = [term for term, date in yoy_data_available.items() if date is not None]
     if available_terms:
         earliest_date = min([yoy_data_available[term] for term in available_terms])
-        st.info(f"📊 **YoY Data Available**: {len(available_terms)}/{len(terms)} terms have YoY data from {earliest_date} onwards")
+        st.info(f"YoY Data Available: {len(available_terms)}/{len(terms)} terms have YoY data from {earliest_date} onwards")
     else:
-        st.warning("⚠️ **No YoY data available** - insufficient historical data for year-over-year comparison")
+        st.warning("No YoY data available - insufficient historical data for year-over-year comparison")
 
     # Debug YoY data if requested
     if show_debug:
-        st.subheader("🔍 YoY Debug Info")
+        st.subheader("YoY Debug Info")
         for term in terms:
             yt = yoy_table(long_df, term)
             st.write(f"**{term}**: {yt.shape[0]} rows, {yt['pct_diff'].notna().sum()} with YoY data")
@@ -1131,7 +1135,7 @@ if run:
             if not combined_filtered_df.empty:
                 date_range_start = combined_filtered_df['date'].min()
                 date_range_end = combined_filtered_df['date'].max()
-                st.info(f"📅 **3-Year YoY Data Range**: {date_range_start.strftime('%Y-%m-%d')} to {date_range_end.strftime('%Y-%m-%d')}")
+                st.info(f"3-Year YoY Data Range: {date_range_start.strftime('%Y-%m-%d')} to {date_range_end.strftime('%Y-%m-%d')}")
             
             st.download_button(
                 "Download YoY Data (Past 3 Years)",
@@ -1144,7 +1148,7 @@ if run:
 
 
     st.markdown("---")
-    with st.expander("📊 Detailed Analysis & Validation", expanded=False):
+    with st.expander("Detailed Analysis & Validation", expanded=False):
         st.subheader("Explainability")
         st.caption("This table shows how the scaling algorithm adjusted each term's maximum value to make all terms comparable. It helps verify that the data normalization worked correctly.")
         st.dataframe(pivot_scores)
@@ -1220,8 +1224,8 @@ if run:
         st.write(f"**Scaling Ratio**: {max_original/min_original:.1f}:1 (most to least popular)")
         
         if max_original/min_original > 10:
-            st.info("⚠️ **Large Popularity Gap**: The most popular term is significantly more popular than the least popular term. Scaling makes them comparable but the original data had very different popularity levels.")
+            st.info("Large Popularity Gap: The most popular term is significantly more popular than the least popular term. Scaling makes them comparable but the original data had very different popularity levels.")
         elif max_original/min_original > 5:
-            st.warning("⚠️ **Moderate Popularity Gap**: There's a notable difference in original popularity between terms.")
+            st.warning("Moderate Popularity Gap: There's a notable difference in original popularity between terms.")
         else:
-            st.success("✅ **Good Popularity Balance**: Terms have relatively similar original popularity levels.")
+            st.success("Good Popularity Balance: Terms have relatively similar original popularity levels.")
