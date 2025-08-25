@@ -1450,52 +1450,84 @@ if run:
 
     # Create YoY charts for all terms
     st.subheader("YoY % Difference by Month")
-    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year. Red dashed line shows zero point. Defaults to past 3 years of data.")
+
     
     # Add toggle for showing all data vs filtered data
     show_all_data = st.checkbox("Show all data (not just 3 years)", value=False)
     show_debug_chart = st.checkbox("Show debug chart (all data points)", value=st.session_state.show_debug_chart)
     st.session_state.show_debug_chart = show_debug_chart
     
-    # Add toggle for chart type
-    use_bar_charts = st.checkbox("Use bar charts (easier to see zero point)", value=False)
+
+    
+    # Create tabs for different chart types
+    tab1, tab2 = st.tabs(["📈 Line Charts", "📊 Bar Charts"])
     
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(2, len(terms))
     
-    for i in range(0, len(terms), charts_per_row):
-        cols = st.columns(charts_per_row)
-        for j, term in enumerate(terms[i:i+charts_per_row]):
-            with cols[j]:
-                if show_debug_chart:
-                    chart = create_yoy_monthly_chart_debug(long_df, term)
-                elif show_all_data:
-                    chart = create_yoy_monthly_chart_all_data(long_df, term)
-                elif use_bar_charts:
-                    chart = create_yoy_monthly_bar_chart(long_df, term)
-                else:
-                    chart = create_yoy_monthly_chart(long_df, term)
-                if chart:
-                    st.altair_chart(chart, use_container_width=True)
-                else:
-                    st.info(f"No YoY data for {term}")
+    with tab1:
+        st.caption("Line charts show trends over time. Red dashed line shows zero point.")
+        for i in range(0, len(terms), charts_per_row):
+            cols = st.columns(charts_per_row)
+            for j, term in enumerate(terms[i:i+charts_per_row]):
+                with cols[j]:
+                    if show_debug_chart:
+                        chart = create_yoy_monthly_chart_debug(long_df, term)
+                    elif show_all_data:
+                        chart = create_yoy_monthly_chart_all_data(long_df, term)
+                    else:
+                        chart = create_yoy_monthly_chart(long_df, term)
+                    if chart:
+                        st.altair_chart(chart, use_container_width=True)
+                    else:
+                        st.info(f"No YoY data for {term}")
+    
+    with tab2:
+        st.caption("Bar charts make it easier to see the zero point and compare magnitudes.")
+        for i in range(0, len(terms), charts_per_row):
+            cols = st.columns(charts_per_row)
+            for j, term in enumerate(terms[i:i+charts_per_row]):
+                with cols[j]:
+                    if show_debug_chart:
+                        chart = create_yoy_monthly_chart_debug(long_df, term)
+                    elif show_all_data:
+                        chart = create_yoy_monthly_chart_all_data(long_df, term)
+                    else:
+                        chart = create_yoy_monthly_bar_chart(long_df, term)
+                    if chart:
+                        st.altair_chart(chart, use_container_width=True)
+                    else:
+                        st.info(f"No YoY data for {term}")
 
     # Create YoY absolute difference charts for all terms
     st.subheader("YoY Absolute Difference by Month")
-    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year. Red dashed line shows zero point. Defaults to past 3 years of data.")
     
-    for i in range(0, len(terms), charts_per_row):
-        cols = st.columns(charts_per_row)
-        for j, term in enumerate(terms[i:i+charts_per_row]):
-            with cols[j]:
-                if use_bar_charts:
-                    chart = create_yoy_absolute_bar_chart(long_df, term)
-                else:
+    # Create tabs for different chart types
+    tab3, tab4 = st.tabs(["📈 Line Charts", "📊 Bar Charts"])
+    
+    with tab3:
+        st.caption("Line charts show trends over time. Red dashed line shows zero point.")
+        for i in range(0, len(terms), charts_per_row):
+            cols = st.columns(charts_per_row)
+            for j, term in enumerate(terms[i:i+charts_per_row]):
+                with cols[j]:
                     chart = create_yoy_absolute_chart(long_df, term)
-                if chart:
-                    st.altair_chart(chart, use_container_width=True)
-                else:
-                    st.info(f"No YoY data for {term}")
+                    if chart:
+                        st.altair_chart(chart, use_container_width=True)
+                    else:
+                        st.info(f"No YoY data for {term}")
+    
+    with tab4:
+        st.caption("Bar charts make it easier to see the zero point and compare magnitudes.")
+        for i in range(0, len(terms), charts_per_row):
+            cols = st.columns(charts_per_row)
+            for j, term in enumerate(terms[i:i+charts_per_row]):
+                with cols[j]:
+                    chart = create_yoy_absolute_bar_chart(long_df, term)
+                    if chart:
+                        st.altair_chart(chart, use_container_width=True)
+                    else:
+                        st.info(f"No YoY data for {term}")
 
     # Download all YoY data
     st.subheader("Download YoY Data")
