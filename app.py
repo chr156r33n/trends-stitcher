@@ -1167,6 +1167,11 @@ if run:
     st.subheader("Algorithm Validation - Scaling Details")
     st.caption("This table shows the original maximum values and how they were scaled to make terms comparable. The reference term has a scale of 1.0 and its original maximum becomes 100 in the normalized data.")
     
+    # Debug info
+    st.write(f"Debug: terms = {terms}")
+    st.write(f"Debug: df_scaled columns = {list(df_scaled.columns)}")
+    st.write(f"Debug: scales keys = {list(scales.index)}")
+    
     # Get original maximum values from the data
     original_max_values = {}
     for term in terms:
