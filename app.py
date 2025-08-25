@@ -10,7 +10,7 @@ from stitcher import stitch_terms
 
 def explore_autocomplete_options(terms: list, api_key: str):
     """Explore autocomplete options for each term to find better entity-based searches"""
-    from serpapi import GoogleSearch
+    import serpapi
     
     st.subheader("Autocomplete Suggestions")
     st.caption("Below are the autocomplete suggestions for each of your terms. Entity-based searches (marked as 'Topic' or specific entity types) often provide better trend data than simple keyword searches.")
@@ -27,7 +27,7 @@ def explore_autocomplete_options(terms: list, api_key: str):
                 "q": term
             }
             
-            search = GoogleSearch(params)
+            search = serpapi.GoogleSearch(params)
             results = search.get_dict()
             
             if "suggestions" in results and results["suggestions"]:
