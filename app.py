@@ -55,7 +55,8 @@ def explore_autocomplete_options(terms: list, api_key: str):
                         f"Download {term} suggestions CSV",
                         csv_data.encode("utf-8"),
                         file_name=f"autocomplete_{term.replace(' ', '_')}.csv",
-                        mime="text/csv"
+                        mime="text/csv",
+                        key=f"autocomplete_{term.replace(' ', '_')}_download"
                     )
                     
                 else:
@@ -87,7 +88,8 @@ def explore_autocomplete_options(terms: list, api_key: str):
             "Download All Autocomplete Suggestions CSV",
             combined_df.to_csv(index=False).encode("utf-8"),
             file_name="all_autocomplete_suggestions.csv",
-            mime="text/csv"
+            mime="text/csv",
+            key="all_autocomplete_download"
         )
         
         # Show summary statistics
@@ -898,9 +900,6 @@ if run:
         scales = st.session_state.scales
         terms = st.session_state.terms
 
-    # TEST: Check if we get past data loading
-    st.write("🔍 TEST DATA LOADED: This should appear after data loading")
-    
     # Apply filters to the data
     if show_debug:
         st.subheader("🔍 Date Filtering Debug")
@@ -929,24 +928,17 @@ if run:
         st.error("All values are NaN. This might indicate an API response parsing issue.")
         st.stop()
 
-    # TEST: Check if we get past data validation
-    st.write("🔍 TEST VALIDATION PASSED: This should appear after data validation")
-    
     if show_debug:
         st.info(f"Chart data shape: {long_df.shape}")
         st.info(f"Available terms: {long_df['term'].unique()}")
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
     st.caption("💡 **Tip**: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
-    st.write("🔍 TEST BEFORE CHART: This should appear before the main chart")
     chart = create_line_chart(long_df, terms, "All Terms (click legend to filter)")
     if chart:
         st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No data to plot.")
-    
-    # Test message
-    st.write("🔍 TESTING: This should appear right after the chart")
     
     # Display the comparable time series table below the chart
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
@@ -956,70 +948,10 @@ if run:
         "Download full timeseries CSV",
         df_scaled.to_csv(index=False).encode("utf-8"),
         file_name="trends_stitched_scaled.csv",
-        mime="text/csv"
+        mime="text/csv",
+        key="full_timeseries_download"
     )
     
-    # Add algorithm validation table
-    st.subheader("Algorithm Validation - Scaling Details")
-    st.caption("This table shows the original maximum values and how they were scaled to make terms comparable. The reference term has a scale of 1.0 and its original maximum becomes 100 in the normalized data.")
-    
-    # Debug info
-    st.write(f"Debug: terms = {terms}")
-    st.write(f"Debug: df_scaled columns = {list(df_scaled.columns)}")
-    st.write(f"Debug: scales keys = {list(scales.index)}")
-    
-    # Get original maximum values from the data
-    original_max_values = {}
-    for term in terms:
-        if term in df_scaled.columns:
-            original_max_values[term] = df_scaled[term].max()
-        else:
-            original_max_values[term] = 0
-    
-    # Create validation table
-    validation_data = []
-    for term in terms:
-        original_max = original_max_values.get(term, 0)
-        scale = scales.get(term, 1.0)
-        normalized_max = original_max * scale
-        
-        validation_data.append({
-            "Term": term,
-            "Original Max": round(original_max, 2),
-            "Scale Factor": round(scale, 4),
-            "Normalized Max": round(normalized_max, 2),
-            "Reference Term": "Yes" if scale == 1.0 else "No"
-        })
-    
-    validation_df = pd.DataFrame(validation_data)
-    validation_df = validation_df.sort_values("Original Max", ascending=False)
-    st.dataframe(validation_df, use_container_width=True)
-    
-    # Add download button for validation data
-    st.download_button(
-        "Download algorithm validation CSV",
-        validation_df.to_csv(index=False).encode("utf-8"),
-        file_name="algorithm_validation.csv",
-        mime="text/csv"
-    )
-    
-    # Add summary statistics
-    st.subheader("Scaling Summary")
-    reference_term = validation_df[validation_df['Reference Term'] == 'Yes']['Term'].iloc[0] if not validation_df[validation_df['Reference Term'] == 'Yes'].empty else "Unknown"
-    max_original = validation_df['Original Max'].max()
-    min_original = validation_df['Original Max'].min()
-    
-    st.write(f"**Reference Term**: {reference_term}")
-    st.write(f"**Original Popularity Range**: {min_original:.2f} to {max_original:.2f}")
-    st.write(f"**Scaling Ratio**: {max_original/min_original:.1f}:1 (most to least popular)")
-    
-    if max_original/min_original > 10:
-        st.info("⚠️ **Large Popularity Gap**: The most popular term is significantly more popular than the least popular term. Scaling makes them comparable but the original data had very different popularity levels.")
-    elif max_original/min_original > 5:
-        st.warning("⚠️ **Moderate Popularity Gap**: There's a notable difference in original popularity between terms.")
-    else:
-        st.success("✅ **Good Popularity Balance**: Terms have relatively similar original popularity levels.")
-
     st.markdown("---")
     st.subheader("Trends Autocomplete Explorer")
     st.caption("Discover better search terms and entities for more accurate trend data. Entity-based searches often provide more comprehensive results than simple keyword searches.")
@@ -1176,7 +1108,8 @@ if run:
                 "Download All YoY Data (Full History)",
                 combined_df.to_csv(index=False).encode("utf-8"),
                 file_name="all_yoy_data_full.csv",
-                mime="text/csv"
+                mime="text/csv",
+                key="all_yoy_data_full_download"
             )
             
 
@@ -1202,13 +1135,13 @@ if run:
                 "Download YoY Data (Past 3 Years)",
                 combined_filtered_df.to_csv(index=False).encode("utf-8"),
                 file_name="yoy_data_past_3_years.csv",
-                mime="text/csv"
+                mime="text/csv",
+                key="yoy_data_3_years_download"
             )
             
 
 
     st.markdown("---")
-    st.write("🔍 TEST 0: This should appear before explainability table")
     st.subheader("Explainability")
     st.caption("This table shows how the scaling algorithm adjusted each term's maximum value to make all terms comparable. It helps verify that the data normalization worked correctly.")
     st.dataframe(pivot_scores)
@@ -1216,7 +1149,8 @@ if run:
         "Download pivot scores CSV",
         pivot_scores.to_csv(index=False).encode("utf-8"),
         file_name="pivot_scores.csv",
-        mime="text/csv"
+        mime="text/csv",
+        key="pivot_scores_download"
     )
 
     st.markdown("---")
@@ -1228,15 +1162,9 @@ if run:
         "Download scale factors CSV",
         scales_df.to_csv(index=False).encode("utf-8"),
         file_name="scale_factors.csv",
-        mime="text/csv"
+        mime="text/csv",
+        key="scale_factors_download"
     )
-    
-    # TEST: Simple message right after scale factors
-    st.write("🔍 TEST 1: This should appear right after scale factors table")
-    
-    # TEST: Simple heading that should always appear
-    st.subheader("🧪 TEST SECTION - This should always appear")
-    st.write("If you can see this, the code is executing. If not, there's a problem.")
     
     # Add algorithm validation table
     st.subheader("Algorithm Validation - Scaling Details")
@@ -1274,7 +1202,8 @@ if run:
         "Download algorithm validation CSV",
         validation_df.to_csv(index=False).encode("utf-8"),
         file_name="algorithm_validation.csv",
-        mime="text/csv"
+        mime="text/csv",
+        key="algorithm_validation_download"
     )
     
     # Add summary statistics
