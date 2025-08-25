@@ -138,6 +138,22 @@ with st.sidebar:
     group_size = st.slider("Batch size (max 5)", 2, 5, 5)
 
     st.markdown("---")
+    st.subheader("🔍 Autocomplete Explorer")
+    st.caption("Discover better search terms and entities")
+    
+    if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
+        if serpapi_key:
+            with st.spinner("Fetching autocomplete suggestions..."):
+                # Get terms from session state if available
+                if hasattr(st.session_state, 'terms') and st.session_state.terms:
+                    explore_autocomplete_options(st.session_state.terms, serpapi_key)
+                else:
+                    st.error("No terms available. Please run the analysis first.")
+        else:
+            st.error("Please enter your SerpAPI key first.")
+    
+
+    st.markdown("---")
     st.subheader("Smoothing & Range")
     smoothing_options = ["None", "3", "7", "30", "90", "365"]
     smoothing_index = smoothing_options.index(st.session_state.smoothing_days) if st.session_state.smoothing_days in smoothing_options else 2
@@ -200,24 +216,6 @@ with st.sidebar:
             st.session_state.data_loaded = False
             st.success("Forcing reload on next run...")
     
-    st.markdown("---")
-    st.subheader("🔍 Autocomplete Explorer")
-    st.caption("Discover better search terms and entities")
-    
-    if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
-        if serpapi_key:
-            with st.spinner("Fetching autocomplete suggestions..."):
-                # Get terms from session state if available
-                if hasattr(st.session_state, 'terms') and st.session_state.terms:
-                    explore_autocomplete_options(st.session_state.terms, serpapi_key)
-                else:
-                    st.error("No terms available. Please run the analysis first.")
-        else:
-            st.error("Please enter your SerpAPI key first.")
-    
-
-
-
 def explore_autocomplete_options(terms: list, api_key: str):
     """Explore autocomplete options for each term to find better entity-based searches"""
     from serpapi import GoogleSearch
