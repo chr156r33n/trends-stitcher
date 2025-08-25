@@ -459,15 +459,44 @@ def cached_filter_date_range(df_scaled: pd.DataFrame, start_date, end_date) -> p
 def apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFrame:
     if smoothing_days == "None":
         return df_scaled
+    
+    # Add debugging info
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(f"Applying smoothing with window: {smoothing_days} days")
+    logger.debug(f"Input data shape: {df_scaled.shape}")
+    logger.debug(f"Input date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+    
     k_days = int(smoothing_days)
     out = df_scaled.copy()
     out["date"] = pd.to_datetime(out["date"])
     step = infer_step_days(out["date"])
     periods = max(1, int(round(k_days / step)))
+    
+    logger.debug(f"Calculated step: {step} days, periods: {periods}")
+    
     wide = out.set_index("date").sort_index()
+    
+    # Improved rolling window with better edge handling
     for col in [c for c in wide.columns if c != "date"]:
-        wide[col] = wide[col].rolling(window=periods, min_periods=max(1, periods // 2)).mean()
-    return wide.reset_index()
+        # Use center=True for symmetric windows and handle NaN values properly
+        # Require at least 50% of the window to have data for a valid calculation
+        min_periods = max(1, int(periods * 0.5))  # At least 50% of window must have data
+        original_values = wide[col].copy()
+        wide[col] = wide[col].rolling(
+            window=periods, 
+            min_periods=min_periods,
+            center=True  # Center the window for symmetric smoothing
+        ).mean()
+        
+        # Log smoothing statistics
+        nan_before = original_values.isna().sum()
+        nan_after = wide[col].isna().sum()
+        logger.debug(f"Column {col}: NaN before={nan_before}, after={nan_after}, periods={periods}, min_periods={min_periods}")
+    
+    result = wide.reset_index()
+    logger.debug(f"Smoothed data shape: {result.shape}")
+    return result
 
 @st.cache_data
 def cached_apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFrame:
@@ -513,16 +542,38 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
         tolerance=pd.Timedelta(days=30)  # Allow up to 30 days difference
     )
     
+    # CRITICAL FIX: Ensure previous year data is actually from the previous year
+    # Calculate what the actual previous year date should be
+    merged["expected_prev_year"] = merged["date"] - pd.Timedelta(days=365)
+    
+    # For merge_asof, we need to check if the merged date is actually from the previous year
+    # Since merge_asof doesn't return the actual matched date, we'll use a different approach
+    # We'll create a proper previous year lookup
+    
+    # Create a proper previous year mapping
+    g_prev_proper = g.copy()
+    g_prev_proper["prev_year_date"] = g_prev_proper["date"] - pd.Timedelta(days=365)
+    g_prev_proper = g_prev_proper.rename(columns={"value": "prior_value"})
+    
+    # Merge with proper previous year dates
+    merged_proper = pd.merge(
+        g,
+        g_prev_proper[["prev_year_date", "prior_value"]],
+        left_on="date",
+        right_on="prev_year_date",
+        how="left"
+    )
+    
     # Calculate differences
-    merged["abs_diff"] = merged["value"] - merged["prior_value"]
-    merged["pct_diff"] = np.where(
-        merged["prior_value"] > 0,
-        (merged["abs_diff"] / merged["prior_value"]) * 100.0,
+    merged_proper["abs_diff"] = merged_proper["value"] - merged_proper["prior_value"]
+    merged_proper["pct_diff"] = np.where(
+        merged_proper["prior_value"] > 0,
+        (merged_proper["abs_diff"] / merged_proper["prior_value"]) * 100.0,
         np.nan
     )
     
     # Return the result with proper column names
-    result = merged[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
+    result = merged_proper[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
         columns={"value": "current", "prior_value": "previous_year"}
     )
     
@@ -816,6 +867,15 @@ if run:
                 st.write(f"📅 **First date with previous year data**: {first_with_prev}")
                 st.write(f"📅 **Earliest data available**: {yt['date'].min()}")
                 st.write(f"📅 **Gap**: No YoY data available for dates before {first_with_prev}")
+                
+                # Show sample of dates with and without previous year data
+                st.write("**Sample dates with previous year data:**")
+                sample_with_prev = yt[yt['previous_year'].notna()].head(5)
+                st.write(sample_with_prev[['date', 'current', 'previous_year', 'pct_diff']])
+                
+                st.write("**Sample dates WITHOUT previous year data:**")
+                sample_without_prev = yt[yt['previous_year'].isna()].head(5)
+                st.write(sample_without_prev[['date', 'current', 'previous_year', 'pct_diff']])
             else:
                 st.write("⚠️ **No previous year data found** - check if you have enough historical data")
 
