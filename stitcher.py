@@ -648,10 +648,13 @@ def infer_step_days_from_dates(dates: pd.Series) -> float:
     if len(d) < 2:
         return 1.0
     
+    # Convert to list for easier manipulation
+    date_list = d.tolist()
+    
     # Calculate differences between consecutive dates
     diffs = []
-    for i in range(1, len(d)):
-        diff = (d.iloc[i] - d.iloc[i-1]).total_seconds() / (24 * 3600)  # Convert to days
+    for i in range(1, len(date_list)):
+        diff = (date_list[i] - date_list[i-1]).total_seconds() / (24 * 3600)  # Convert to days
         diffs.append(diff)
     
     return float(np.median(diffs)) if diffs else 1.0
