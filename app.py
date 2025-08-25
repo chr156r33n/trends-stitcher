@@ -226,8 +226,9 @@ with st.sidebar:
     # Update session state
     st.session_state.timeframe = timeframe
     
-    group_size = st.slider("Batch size (max 5)", 2, 5, 5)
-
+    group_size = st.slider("Batch size (max 5)", 2, 5, 3)
+    st.caption("3: Most robust stitching (more overlap, slower) | 5: Most efficient (fewer API calls, less overlap)")
+    
     # Move buttons above autocomplete explorer
     run = st.button("Run")
     
@@ -1126,16 +1127,24 @@ if run:
             min_term = min(term_max_values, key=term_max_values.get)
             max_val = term_max_values[max_term]
             min_val = term_max_values[min_term]
-            ratio = max_val / min_val if min_val > 0 else float('inf')
             
-            # Show user-friendly popularity analysis
-            if ratio > 100:
-                st.warning(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}' in Google Trends. The less popular terms may appear near-zero in the chart above due to scaling.")
-                st.info("**Tip:** Try the 'Autocomplete Explorer' below to find more comparable terms, or group terms with similar popularity levels.")
-            elif ratio > 50:
-                st.info(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}'. Some terms may be hard to see in the chart due to scaling differences.")
-            elif ratio > 10:
-                st.info(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}'. All terms should be visible in the chart.")
+            # Handle cases where min_val is 0 (no data for that term)
+            if min_val == 0:
+                st.warning(f"**Data Notice:** '{min_term}' has no search data in Google Trends (all values are 0). This term will not appear in the chart above.")
+                st.info("**Tip:** Try the 'Autocomplete Explorer' below to find alternative search terms, or check if the term is spelled correctly.")
+            else:
+                ratio = max_val / min_val
+                
+                # Show user-friendly popularity analysis
+                if ratio > 100:
+                    st.warning(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}' in Google Trends. The less popular terms may appear near-zero in the chart above due to scaling.")
+                    st.info("**Tip:** Try the 'Autocomplete Explorer' below to find more comparable terms, or group terms with similar popularity levels.")
+                elif ratio > 50:
+                    st.info(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}'. Some terms may be hard to see in the chart due to scaling differences.")
+                elif ratio > 10:
+                    st.info(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}'. All terms should be visible in the chart.")
+                else:
+                    st.success(f"**Good balance:** '{max_term}' is only {ratio:.1f}x more popular than '{min_term}'. All terms should be clearly visible in the chart.")
     
     # Display the comparable time series table below the chart
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
