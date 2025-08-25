@@ -647,8 +647,14 @@ def infer_step_days_from_dates(dates: pd.Series) -> float:
     d = dates.sort_values().drop_duplicates()
     if len(d) < 2:
         return 1.0
-    diffs = d.diff().dropna().dt.days.to_numpy()
-    return float(np.median(diffs)) if len(diffs) else 1.0
+    
+    # Calculate differences between consecutive dates
+    diffs = []
+    for i in range(1, len(d)):
+        diff = (d.iloc[i] - d.iloc[i-1]).total_seconds() / (24 * 3600)  # Convert to days
+        diffs.append(diff)
+    
+    return float(np.median(diffs)) if diffs else 1.0
 
 
 def stitch_terms(
