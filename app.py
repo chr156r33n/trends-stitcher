@@ -7,10 +7,10 @@ import streamlit as st
 import altair as alt
 
 from stitcher import stitch_terms
+from serpapi import GoogleSearch
 
 def explore_autocomplete_options(terms: list, api_key: str):
     """Explore autocomplete options for each term to find better entity-based searches"""
-    import serpapi
     
     st.subheader("Autocomplete Suggestions")
     st.caption("Below are the autocomplete suggestions for each of your terms. Entity-based searches (marked as 'Topic' or specific entity types) often provide better trend data than simple keyword searches.")
@@ -27,7 +27,7 @@ def explore_autocomplete_options(terms: list, api_key: str):
                 "q": term
             }
             
-            search = serpapi.GoogleSearch(params)
+            search = GoogleSearch(params)
             results = search.get_dict()
             
             if "suggestions" in results and results["suggestions"]:
