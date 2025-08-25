@@ -11,6 +11,7 @@ import serpapi
 
 def explore_autocomplete_options(terms: list, api_key: str):
     """Explore autocomplete options for each term to find better entity-based searches"""
+    import requests
     
     st.subheader("Autocomplete Suggestions")
     st.caption("Below are the autocomplete suggestions for each of your terms. Entity-based searches (marked as 'Topic' or specific entity types) often provide better trend data than simple keyword searches.")
@@ -27,38 +28,41 @@ def explore_autocomplete_options(terms: list, api_key: str):
                 "q": term
             }
             
-            search = serpapi.google_search.GoogleSearch(params)
-            results = search.get_dict()
-            
-            if "suggestions" in results and results["suggestions"]:
-                suggestions = results["suggestions"]
-                all_suggestions[term] = suggestions
+            response = requests.get("https://serpapi.com/search", params=params, timeout=30)
+            if response.status_code == 200:
+                results = response.json()
                 
-                # Create a DataFrame for better display
-                suggestion_data = []
-                for i, suggestion in enumerate(suggestions):
-                    suggestion_data.append({
-                        "Option": i + 1,
-                        "Query": suggestion.get("q", ""),
-                        "Title": suggestion.get("title", ""),
-                        "Type": suggestion.get("type", ""),
-                        "Link": suggestion.get("link", "")
-                    })
-                
-                df = pd.DataFrame(suggestion_data)
-                st.dataframe(df, use_container_width=True)
-                
-                # Add download button for this term's suggestions
-                csv_data = df.to_csv(index=False)
-                st.download_button(
-                    f"Download {term} suggestions CSV",
-                    csv_data.encode("utf-8"),
-                    file_name=f"autocomplete_{term.replace(' ', '_')}.csv",
-                    mime="text/csv"
-                )
-                
+                if "suggestions" in results and results["suggestions"]:
+                    suggestions = results["suggestions"]
+                    all_suggestions[term] = suggestions
+                    
+                    # Create a DataFrame for better display
+                    suggestion_data = []
+                    for i, suggestion in enumerate(suggestions):
+                        suggestion_data.append({
+                            "Option": i + 1,
+                            "Query": suggestion.get("q", ""),
+                            "Title": suggestion.get("title", ""),
+                            "Type": suggestion.get("type", ""),
+                            "Link": suggestion.get("link", "")
+                        })
+                    
+                    df = pd.DataFrame(suggestion_data)
+                    st.dataframe(df, use_container_width=True)
+                    
+                    # Add download button for this term's suggestions
+                    csv_data = df.to_csv(index=False)
+                    st.download_button(
+                        f"Download {term} suggestions CSV",
+                        csv_data.encode("utf-8"),
+                        file_name=f"autocomplete_{term.replace(' ', '_')}.csv",
+                        mime="text/csv"
+                    )
+                    
+                else:
+                    st.info(f"No autocomplete suggestions found for '{term}'")
             else:
-                st.info(f"No autocomplete suggestions found for '{term}'")
+                st.error(f"HTTP {response.status_code}: {response.text}")
                 
         except Exception as e:
             st.error(f"Error fetching autocomplete for '{term}': {str(e)}")
