@@ -943,6 +943,9 @@ if run:
     else:
         st.info("No data to plot.")
     
+    # Test message
+    st.write("🔍 TESTING: This should appear right after the chart")
+    
     # Add algorithm validation table
     st.subheader("Algorithm Validation - Scaling Details")
     st.caption("This table shows the original maximum values and how they were scaled to make terms comparable. The reference term has a scale of 1.0 and its original maximum becomes 100 in the normalized data.")
