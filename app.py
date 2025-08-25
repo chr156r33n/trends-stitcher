@@ -943,6 +943,67 @@ if run:
     else:
         st.info("No data to plot.")
     
+    # Add algorithm validation table
+    st.subheader("Algorithm Validation - Scaling Details")
+    st.caption("This table shows the original maximum values and how they were scaled to make terms comparable. The reference term has a scale of 1.0 and its original maximum becomes 100 in the normalized data.")
+    
+    # Debug info
+    st.write(f"Debug: terms = {terms}")
+    st.write(f"Debug: df_scaled columns = {list(df_scaled.columns)}")
+    st.write(f"Debug: scales keys = {list(scales.index)}")
+    
+    # Get original maximum values from the data
+    original_max_values = {}
+    for term in terms:
+        if term in df_scaled.columns:
+            original_max_values[term] = df_scaled[term].max()
+        else:
+            original_max_values[term] = 0
+    
+    # Create validation table
+    validation_data = []
+    for term in terms:
+        original_max = original_max_values.get(term, 0)
+        scale = scales.get(term, 1.0)
+        normalized_max = original_max * scale
+        
+        validation_data.append({
+            "Term": term,
+            "Original Max": round(original_max, 2),
+            "Scale Factor": round(scale, 4),
+            "Normalized Max": round(normalized_max, 2),
+            "Reference Term": "Yes" if scale == 1.0 else "No"
+        })
+    
+    validation_df = pd.DataFrame(validation_data)
+    validation_df = validation_df.sort_values("Original Max", ascending=False)
+    st.dataframe(validation_df, use_container_width=True)
+    
+    # Add download button for validation data
+    st.download_button(
+        "Download algorithm validation CSV",
+        validation_df.to_csv(index=False).encode("utf-8"),
+        file_name="algorithm_validation.csv",
+        mime="text/csv"
+    )
+    
+    # Add summary statistics
+    st.subheader("Scaling Summary")
+    reference_term = validation_df[validation_df['Reference Term'] == 'Yes']['Term'].iloc[0] if not validation_df[validation_df['Reference Term'] == 'Yes'].empty else "Unknown"
+    max_original = validation_df['Original Max'].max()
+    min_original = validation_df['Original Max'].min()
+    
+    st.write(f"**Reference Term**: {reference_term}")
+    st.write(f"**Original Popularity Range**: {min_original:.2f} to {max_original:.2f}")
+    st.write(f"**Scaling Ratio**: {max_original/min_original:.1f}:1 (most to least popular)")
+    
+    if max_original/min_original > 10:
+        st.info("⚠️ **Large Popularity Gap**: The most popular term is significantly more popular than the least popular term. Scaling makes them comparable but the original data had very different popularity levels.")
+    elif max_original/min_original > 5:
+        st.warning("⚠️ **Moderate Popularity Gap**: There's a notable difference in original popularity between terms.")
+    else:
+        st.success("✅ **Good Popularity Balance**: Terms have relatively similar original popularity levels.")
+    
     # Display the comparable time series table below the chart
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
     st.caption("This table shows the trend data where all terms are scaled to the same range (0-100) so you can easily compare their relative popularity over time.")
