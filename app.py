@@ -210,9 +210,29 @@ with st.sidebar:
             st.rerun()
     
     with col2:
-        if st.button("🔄 Force Reload"):
-            st.session_state.data_loaded = False
-            st.success("Forcing reload on next run...")
+            if st.button("🔄 Force Reload"):
+        st.session_state.data_loaded = False
+        st.success("Forcing reload on next run...")
+    
+    st.markdown("---")
+    st.subheader("🔍 Autocomplete Explorer")
+    st.caption("Discover better search terms and entities")
+    
+    if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
+        if serpapi_key:
+            with st.spinner("Fetching autocomplete suggestions..."):
+                # Get terms from text area if available
+                terms_text = st.session_state.get('terms_text', '')
+                if terms_text:
+                    terms_to_explore = [t.strip() for t in terms_text.splitlines() if t.strip()]
+                    if terms_to_explore:
+                        explore_autocomplete_options(terms_to_explore, serpapi_key)
+                    else:
+                        st.error("Please enter some terms in the text area first.")
+                else:
+                    st.error("Please enter some terms in the text area first.")
+        else:
+            st.error("Please enter your SerpAPI key first.")
     
 
     
@@ -960,7 +980,7 @@ if run:
     st.caption("Discover better search terms and entities for more accurate trend data. Entity-based searches often provide more comprehensive results than simple keyword searches.")
     
     # Add autocomplete exploration section
-    if st.button("🔍 Explore Autocomplete Options"):
+    if st.button("🔍 Explore Autocomplete Options", key="autocomplete_button"):
         with st.spinner("Fetching autocomplete suggestions..."):
             explore_autocomplete_options(terms, serpapi_key)
     
