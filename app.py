@@ -1228,6 +1228,10 @@ if run:
         mime="text/csv"
     )
     
+    # TEST: Simple heading that should always appear
+    st.subheader("🧪 TEST SECTION - This should always appear")
+    st.write("If you can see this, the code is executing. If not, there's a problem.")
+    
     # Add algorithm validation table
     st.subheader("Algorithm Validation - Scaling Details")
     st.caption("This table shows the original maximum values and how they were scaled to make terms comparable. The reference term has a scale of 1.0 and its original maximum becomes 100 in the normalized data.")
