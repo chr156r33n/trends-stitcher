@@ -210,9 +210,9 @@ with st.sidebar:
             st.rerun()
     
     with col2:
-            if st.button("🔄 Force Reload"):
-        st.session_state.data_loaded = False
-        st.success("Forcing reload on next run...")
+        if st.button("🔄 Force Reload"):
+            st.session_state.data_loaded = False
+            st.success("Forcing reload on next run...")
     
     st.markdown("---")
     st.subheader("🔍 Autocomplete Explorer")
@@ -233,17 +233,6 @@ with st.sidebar:
                     st.error("Please enter some terms in the text area first.")
         else:
             st.error("Please enter your SerpAPI key first.")
-    
-
-    
-
-    
-
-    
-
-    
-
-
 
 
 def explore_autocomplete_options(terms: list, api_key: str):
