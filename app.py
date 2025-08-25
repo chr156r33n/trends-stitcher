@@ -300,6 +300,38 @@ with st.sidebar:
         else:
             st.error("No data loaded. Please run the analysis first.")
     
+    # Add YoY date mapping test button
+    if st.button("🔍 Test YoY Date Mapping"):
+        st.subheader("YoY Date Mapping Test")
+        if st.session_state.df_scaled is not None and st.session_state.terms:
+            long_df = cached_melt_long(st.session_state.df_scaled)
+            term_to_test = st.selectbox("Select term to test:", st.session_state.terms, key="test_term")
+            
+            if term_to_test:
+                g = long_df[long_df["term"] == term_to_test].sort_values("date").copy()
+                g["date"] = pd.to_datetime(g["date"])
+                
+                # Test the old method (365 days)
+                g["prev_year_old"] = g["date"] - pd.Timedelta(days=365)
+                
+                # Test the new method (replace year)
+                g["prev_year_new"] = g["date"].apply(lambda x: x.replace(year=x.year - 1))
+                
+                # Show comparison
+                st.write("**Date Mapping Comparison:**")
+                comparison_df = g[["date", "prev_year_old", "prev_year_new"]].head(20)
+                st.dataframe(comparison_df)
+                
+                # Show if there are differences
+                differences = g[g["prev_year_old"] != g["prev_year_new"]]
+                if not differences.empty:
+                    st.write(f"**Found {len(differences)} dates with different mappings:**")
+                    st.dataframe(differences[["date", "prev_year_old", "prev_year_new"]])
+                else:
+                    st.write("✅ All date mappings are identical")
+        else:
+            st.error("No data loaded. Please run the analysis first.")
+    
     # Add SerpAPI timeframe test button
     if st.button("🔍 Test SerpAPI Timeframes"):
         if serpapi_key:
@@ -611,13 +643,14 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     logger.debug(f"Total data points: {len(g)}")
     
     # Create a lookup table for previous year data
-    # For each date in the data, calculate what the previous year date should be
-    g["prev_year_date"] = g["date"] - pd.Timedelta(days=365)
+    # Use a more robust method that handles leap years properly
+    # Instead of subtracting 365 days, we'll subtract 1 year and adjust for leap years
+    g["prev_year_date"] = g["date"].apply(lambda x: x.replace(year=x.year - 1))
     
     # Create a mapping from current dates to values (for previous year lookup)
     date_value_map = g.set_index("date")["value"].to_dict()
     
-    # For each row, look up the value from exactly 365 days ago
+    # For each row, look up the value from exactly 1 year ago
     g["prior_value"] = g["prev_year_date"].map(date_value_map)
     
     # Debug: Show some examples of the mapping
