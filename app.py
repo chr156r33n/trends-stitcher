@@ -950,7 +950,7 @@ def create_yoy_monthly_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_filtered['year'] = yt_filtered['date'].dt.year
     
-    # Create the bar chart
+    # Create the bar chart with bars side by side
     chart = (
         alt.Chart(yt_filtered)
         .mark_bar()
@@ -959,6 +959,7 @@ def create_yoy_monthly_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
                                                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
             y=alt.Y('pct_diff:Q', title='YoY % Difference'),
             color=alt.Color('year:N', title='Year'),
+            column=alt.Column('year:N', title=''),  # This creates side-by-side bars
             tooltip=[
                 alt.Tooltip('year:N', title='Year'),
                 alt.Tooltip('month_name:N', title='Month'),
@@ -970,7 +971,7 @@ def create_yoy_monthly_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
         .properties(
             title=f'{term} - YoY % Difference by Month ({start_year}-{latest_year})',
             height=300,
-            width=400
+            width=100  # Smaller width since we're using columns
         )
         .interactive()
     )
@@ -1018,7 +1019,7 @@ def create_yoy_absolute_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart
     yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_filtered['year'] = yt_filtered['date'].dt.year
     
-    # Create the bar chart
+    # Create the bar chart with bars side by side
     chart = (
         alt.Chart(yt_filtered)
         .mark_bar()
@@ -1027,6 +1028,7 @@ def create_yoy_absolute_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart
                                                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
             y=alt.Y('abs_diff:Q', title='YoY Absolute Difference'),
             color=alt.Color('year:N', title='Year'),
+            column=alt.Column('year:N', title=''),  # This creates side-by-side bars
             tooltip=[
                 alt.Tooltip('year:N', title='Year'),
                 alt.Tooltip('month_name:N', title='Month'),
@@ -1038,7 +1040,7 @@ def create_yoy_absolute_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart
         .properties(
             title=f'{term} - YoY Absolute Difference by Month ({start_year}-{latest_year})',
             height=300,
-            width=400
+            width=100  # Smaller width since we're using columns
         )
         .interactive()
     )
@@ -1483,21 +1485,18 @@ if run:
                         st.info(f"No YoY data for {term}")
     
     with tab2:
-        st.caption("Bar charts make it easier to see the zero point and compare magnitudes.")
-        for i in range(0, len(terms), charts_per_row):
-            cols = st.columns(charts_per_row)
-            for j, term in enumerate(terms[i:i+charts_per_row]):
-                with cols[j]:
-                    if show_debug_chart:
-                        chart = create_yoy_monthly_chart_debug(long_df, term)
-                    elif show_all_data:
-                        chart = create_yoy_monthly_chart_all_data(long_df, term)
-                    else:
-                        chart = create_yoy_monthly_bar_chart(long_df, term)
-                    if chart:
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.info(f"No YoY data for {term}")
+        st.caption("Bar charts make it easier to see the zero point and compare magnitudes. One chart per row for better visibility.")
+        for term in terms:
+            if show_debug_chart:
+                chart = create_yoy_monthly_chart_debug(long_df, term)
+            elif show_all_data:
+                chart = create_yoy_monthly_chart_all_data(long_df, term)
+            else:
+                chart = create_yoy_monthly_bar_chart(long_df, term)
+            if chart:
+                st.altair_chart(chart, use_container_width=True)
+            else:
+                st.info(f"No YoY data for {term}")
 
     # Create YoY absolute difference charts for all terms
     st.subheader("YoY Absolute Difference by Month")
@@ -1518,16 +1517,13 @@ if run:
                         st.info(f"No YoY data for {term}")
     
     with tab4:
-        st.caption("Bar charts make it easier to see the zero point and compare magnitudes.")
-        for i in range(0, len(terms), charts_per_row):
-            cols = st.columns(charts_per_row)
-            for j, term in enumerate(terms[i:i+charts_per_row]):
-                with cols[j]:
-                    chart = create_yoy_absolute_bar_chart(long_df, term)
-                    if chart:
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.info(f"No YoY data for {term}")
+        st.caption("Bar charts make it easier to see the zero point and compare magnitudes. One chart per row for better visibility.")
+        for term in terms:
+            chart = create_yoy_absolute_bar_chart(long_df, term)
+            if chart:
+                st.altair_chart(chart, use_container_width=True)
+            else:
+                st.info(f"No YoY data for {term}")
 
     # Download all YoY data
     st.subheader("Download YoY Data")
