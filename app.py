@@ -931,6 +931,34 @@ if run:
                     st.write(f"- Terms with data: {sum(1 for term in terms if term in df_scaled.columns)}")
                     st.write(f"- Terms with non-zero data: {sum(1 for term in terms if term in df_scaled.columns and df_scaled[term].max() > 0)}")
                     
+                    # Show magnitude differences and scaling analysis
+                    st.write("**Magnitude Analysis (Before Scaling):**")
+                    term_max_values = {}
+                    for term in terms:
+                        if term in df_scaled.columns:
+                            max_val = df_scaled[term].max()
+                            term_max_values[term] = max_val
+                            st.write(f"  {term}: max value = {max_val:.2f}")
+                    
+                    if term_max_values:
+                        max_term = max(term_max_values, key=term_max_values.get)
+                        min_term = min(term_max_values, key=term_max_values.get)
+                        max_val = term_max_values[max_term]
+                        min_val = term_max_values[min_term]
+                        ratio = max_val / min_val if min_val > 0 else float('inf')
+                        
+                        st.write(f"**Magnitude Differences:**")
+                        st.write(f"- Most popular term: {max_term} (max = {max_val:.2f})")
+                        st.write(f"- Least popular term: {min_term} (max = {min_val:.2f})")
+                        st.write(f"- Magnitude ratio: {ratio:.1f}:1")
+                        
+                        if ratio > 100:
+                            st.warning(f"**Large magnitude difference detected!** The most popular term is {ratio:.0f}x more popular than the least popular term. This may cause scaling issues.")
+                        elif ratio > 50:
+                            st.info(f"**Moderate magnitude difference:** The most popular term is {ratio:.0f}x more popular than the least popular term.")
+                        else:
+                            st.success(f"**Good magnitude balance:** Terms have similar popularity levels.")
+                    
                     # Show raw data shape and info
                     st.write("**Raw DataFrame Info:**")
                     st.write(f"- Shape: {df_scaled.shape}")
@@ -958,6 +986,41 @@ if run:
                 st.session_state.data_loaded = True
                 st.session_state.current_params = current_params
                 
+                # Show scaling analysis in debug mode
+                if show_debug:
+                    st.subheader("Scaling Analysis Debug")
+                    st.write("**Scale Factors Applied:**")
+                    for term in terms:
+                        if term in scales.index:
+                            scale_factor = scales[term]
+                            original_max = df_scaled[term].max() if term in df_scaled.columns else 0
+                            scaled_max = original_max * scale_factor
+                            st.write(f"  {term}:")
+                            st.write(f"    - Original max: {original_max:.2f}")
+                            st.write(f"    - Scale factor: {scale_factor:.4f}")
+                            st.write(f"    - Scaled max: {scaled_max:.2f}")
+                            if scale_factor < 0.1:
+                                st.warning(f"    - **Very small scale factor!** This term will appear near-zero in charts.")
+                            elif scale_factor < 0.5:
+                                st.info(f"    - **Small scale factor** - term will appear reduced in charts.")
+                    
+                    st.write("**Scaling Summary:**")
+                    st.write(f"- Reference term: {scales.idxmax()} (scale = {scales.max():.4f})")
+                    st.write(f"- Most scaled down: {scales.idxmin()} (scale = {scales.min():.4f})")
+                    st.write(f"- Scale factor range: {scales.min():.4f} to {scales.max():.4f}")
+                    
+                    scale_ratio = scales.max() / scales.min() if scales.min() > 0 else float('inf')
+                    st.write(f"- Scale factor ratio: {scale_ratio:.1f}:1")
+                    
+                    if scale_ratio > 100:
+                        st.error("**Extreme scaling detected!** Some terms will be nearly invisible in charts due to very small scale factors.")
+                        st.info("**Suggestion:** Try using the 'Autocomplete Explorer' to find more comparable terms, or group terms with similar popularity levels.")
+                    elif scale_ratio > 50:
+                        st.warning("**Large scaling detected!** Some terms may be hard to see in charts.")
+                        st.info("**Suggestion:** Consider using the 'Autocomplete Explorer' to find more comparable terms.")
+                    else:
+                        st.success("**Reasonable scaling** - all terms should be visible in charts.")
+
             except Exception as e:
                 st.error(f"Error during data fetching: {str(e)}")
                 if show_debug:
@@ -1048,6 +1111,31 @@ if run:
         st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No data to plot.")
+    
+    # Show popularity analysis for all users (not just debug mode)
+    if 'df_scaled' in locals() and df_scaled is not None and not df_scaled.empty:
+        # Calculate popularity differences from original data
+        term_max_values = {}
+        for term in terms:
+            if term in df_scaled.columns:
+                max_val = df_scaled[term].max()
+                term_max_values[term] = max_val
+        
+        if term_max_values:
+            max_term = max(term_max_values, key=term_max_values.get)
+            min_term = min(term_max_values, key=term_max_values.get)
+            max_val = term_max_values[max_term]
+            min_val = term_max_values[min_term]
+            ratio = max_val / min_val if min_val > 0 else float('inf')
+            
+            # Show user-friendly popularity analysis
+            if ratio > 100:
+                st.warning(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}' in Google Trends. The less popular terms may appear near-zero in the chart above due to scaling.")
+                st.info("**Tip:** Try the 'Autocomplete Explorer' below to find more comparable terms, or group terms with similar popularity levels.")
+            elif ratio > 50:
+                st.info(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}'. Some terms may be hard to see in the chart due to scaling differences.")
+            elif ratio > 10:
+                st.info(f"**Popularity Notice:** '{max_term}' is {ratio:.0f}x more popular than '{min_term}'. All terms should be visible in the chart.")
     
     # Display the comparable time series table below the chart
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
@@ -1222,6 +1310,7 @@ if run:
             )
             
 
+
     
     if all_yoy_data_filtered:
         # Create combined CSV for filtered data (past 5 years)
@@ -1332,3 +1421,4 @@ if run:
             st.warning("Moderate Popularity Gap: There's a notable difference in original popularity between terms.")
         else:
             st.success("Good Popularity Balance: Terms have relatively similar original popularity levels.")
+    
