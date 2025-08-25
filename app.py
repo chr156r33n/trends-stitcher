@@ -35,8 +35,7 @@ if 'terms' not in st.session_state:
     st.session_state.terms = None
 if 'current_params' not in st.session_state:
     st.session_state.current_params = None
-if 'selected_yoy_term' not in st.session_state:
-    st.session_state.selected_yoy_term = None
+
 if 'selected_chart_terms' not in st.session_state:
     st.session_state.selected_chart_terms = None
 if 'show_small_multiples' not in st.session_state:
@@ -199,7 +198,7 @@ with st.sidebar:
             st.session_state.scales = None
             st.session_state.terms = None
             st.session_state.current_params = None
-            st.session_state.selected_yoy_term = None
+
             st.session_state.selected_chart_terms = None
             st.session_state.show_small_multiples = False
             st.session_state.smoothing_days = "7"
@@ -646,6 +645,104 @@ def create_small_multiples(data, all_terms):
     )
     return chart
 
+@st.cache_data
+def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
+    """
+    Create a YoY chart with month on X-axis and lines for each year.
+    """
+    # Get YoY data for the term
+    yt = yoy_table(long_df, term)
+    
+    if yt.empty or yt['pct_diff'].isna().all():
+        return None
+    
+    # Filter to only rows with valid YoY data
+    yt_valid = yt.dropna(subset=['pct_diff']).copy()
+    
+    if yt_valid.empty:
+        return None
+    
+    # Extract month and year for visualization
+    yt_valid['month'] = yt_valid['date'].dt.month
+    yt_valid['month_name'] = yt_valid['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_valid['year'] = yt_valid['date'].dt.year
+    
+    # Create the chart
+    chart = (
+        alt.Chart(yt_valid)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+            y=alt.Y('pct_diff:Q', title='YoY % Difference'),
+            color=alt.Color('year:N', title='Year'),
+            tooltip=[
+                alt.Tooltip('year:N', title='Year'),
+                alt.Tooltip('month_name:N', title='Month'),
+                alt.Tooltip('pct_diff:Q', title='YoY % Diff', format='.2f'),
+                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
+                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f')
+            ]
+        )
+        .properties(
+            title=f'{term} - Year-over-Year % Difference by Month',
+            height=300,
+            width=400
+        )
+        .interactive()
+    )
+    
+    return chart
+
+@st.cache_data
+def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
+    """
+    Create a YoY chart showing absolute differences with month on X-axis.
+    """
+    # Get YoY data for the term
+    yt = yoy_table(long_df, term)
+    
+    if yt.empty or yt['abs_diff'].isna().all():
+        return None
+    
+    # Filter to only rows with valid YoY data
+    yt_valid = yt.dropna(subset=['abs_diff']).copy()
+    
+    if yt_valid.empty:
+        return None
+    
+    # Extract month and year for visualization
+    yt_valid['month'] = yt_valid['date'].dt.month
+    yt_valid['month_name'] = yt_valid['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_valid['year'] = yt_valid['date'].dt.year
+    
+    # Create the chart
+    chart = (
+        alt.Chart(yt_valid)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+            y=alt.Y('abs_diff:Q', title='YoY Absolute Difference'),
+            color=alt.Color('year:N', title='Year'),
+            tooltip=[
+                alt.Tooltip('year:N', title='Year'),
+                alt.Tooltip('month_name:N', title='Month'),
+                alt.Tooltip('abs_diff:Q', title='YoY Abs Diff', format='.2f'),
+                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
+                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f')
+            ]
+        )
+        .properties(
+            title=f'{term} - Year-over-Year Absolute Difference by Month',
+            height=300,
+            width=400
+        )
+        .interactive()
+    )
+    
+    return chart
+
 if run:
     if not serpapi_key:
         st.error("Please enter your SerpAPI key.")
@@ -788,9 +885,7 @@ if run:
     # Update session state with current selection
     st.session_state.selected_chart_terms = selected_terms
     
-    # Reset YoY term if it's no longer in the available terms
-    if st.session_state.selected_yoy_term and st.session_state.selected_yoy_term not in terms:
-        st.session_state.selected_yoy_term = terms[0] if terms else None
+
 
     if show_debug:
         st.info(f"Chart data shape: {long_df.shape}")
@@ -811,108 +906,94 @@ if run:
             st.info("No data to plot for the selected terms.")
 
     st.markdown("---")
-    st.subheader("Year-on-Year (YoY)")
+    st.subheader("Year-on-Year (YoY) Analysis")
 
-    # Use session state for YoY term selection, with fallback to first term
-    if st.session_state.selected_yoy_term is None or st.session_state.selected_yoy_term not in terms:
-        st.session_state.selected_yoy_term = terms[0] if terms else None
-    
-    yoy_term = st.selectbox("Pick a term for YoY analysis", options=terms, index=terms.index(st.session_state.selected_yoy_term) if st.session_state.selected_yoy_term in terms else 0)
-    
-    # Update session state with current selection
-    st.session_state.selected_yoy_term = yoy_term
-    
-    yt = yoy_table(long_df, yoy_term)
-    
-    # Show YoY data availability info
-    if not yt.empty:
-        first_with_prev = yt[yt['previous_year'].notna()]['date'].min()
-        if pd.notna(first_with_prev):
-            earliest_data = yt['date'].min()
-            st.info(f"📊 **YoY Data Available**: From {first_with_prev} onwards (earliest data: {earliest_data})")
-        else:
-            st.warning("⚠️ **No YoY data available** - insufficient historical data for year-over-year comparison")
-    else:
-        st.warning("⚠️ **No YoY data available** - no data found for selected term")
-
-    # Debug YoY data
-    if show_debug:
-        st.subheader("🔍 YoY Debug Info")
-        st.write(f"YoY term: {yoy_term}")
-        st.write(f"YoY data shape: {yt.shape}")
-        st.write(f"YoY data sample:")
-        st.write(yt.head(10))
-        st.write(f"YoY data info:")
-        st.write(yt.info())
+    # Show YoY data availability info for all terms
+    yoy_data_available = {}
+    for term in terms:
+        yt = yoy_table(long_df, term)
         if not yt.empty:
-            st.write(f"YoY date range: {yt['date'].min()} to {yt['date'].max()}")
-            st.write(f"YoY non-null current values: {yt['current'].notna().sum()}")
-            st.write(f"YoY non-null previous values: {yt['previous_year'].notna().sum()}")
-            st.write(f"YoY non-null pct_diff values: {yt['pct_diff'].notna().sum()}")
-            
-            # Show the first date with previous year data
             first_with_prev = yt[yt['previous_year'].notna()]['date'].min()
             if pd.notna(first_with_prev):
-                st.write(f"📅 **First date with previous year data**: {first_with_prev}")
-                st.write(f"📅 **Earliest data available**: {yt['date'].min()}")
-                st.write(f"📅 **Gap**: No YoY data available for dates before {first_with_prev}")
-                
-                # Show sample of dates with and without previous year data
-                st.write("**Sample dates with previous year data:**")
-                sample_with_prev = yt[yt['previous_year'].notna()].head(5)
-                st.write(sample_with_prev[['date', 'current', 'previous_year', 'pct_diff']])
-                
-                st.write("**Sample dates WITHOUT previous year data:**")
-                sample_without_prev = yt[yt['previous_year'].isna()].head(5)
-                st.write(sample_without_prev[['date', 'current', 'previous_year', 'pct_diff']])
+                yoy_data_available[term] = first_with_prev
             else:
-                st.write("⚠️ **No previous year data found** - check if you have enough historical data")
+                yoy_data_available[term] = None
+        else:
+            yoy_data_available[term] = None
+    
+    # Display availability info
+    available_terms = [term for term, date in yoy_data_available.items() if date is not None]
+    if available_terms:
+        earliest_date = min([yoy_data_available[term] for term in available_terms])
+        st.info(f"📊 **YoY Data Available**: {len(available_terms)}/{len(terms)} terms have YoY data from {earliest_date} onwards")
+    else:
+        st.warning("⚠️ **No YoY data available** - insufficient historical data for year-over-year comparison")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**{yoy_term} — Current vs Prior Year**")
-        plot_df = yt.dropna(subset=["current", "previous_year"]).copy()
-        curr_df = plot_df[["date", "current"]].assign(series="Current").rename(columns={"current":"value"})
-        prev_df = plot_df[["date", "previous_year"]].assign(series="Previous Year").rename(columns={"previous_year":"value"})
-        comb = pd.concat([curr_df, prev_df], ignore_index=True)
-        ch = (
-            alt.Chart(comb)
-            .mark_line()
-            .encode(
-                x=alt.X("date:T", title="Date"),
-                y=alt.Y("value:Q", title="Index"),
-                color=alt.Color("series:N", title=""),
-                tooltip=["date:T", "series:N", alt.Tooltip("value:Q", format=".2f")]
+    # Debug YoY data if requested
+    if show_debug:
+        st.subheader("🔍 YoY Debug Info")
+        for term in terms:
+            yt = yoy_table(long_df, term)
+            st.write(f"**{term}**: {yt.shape[0]} rows, {yt['pct_diff'].notna().sum()} with YoY data")
+
+    # Create YoY charts for all terms
+    st.subheader("YoY % Difference by Month")
+    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year.")
+    
+    # Calculate how many charts per row based on number of terms
+    charts_per_row = min(3, len(terms))
+    
+    for i in range(0, len(terms), charts_per_row):
+        cols = st.columns(charts_per_row)
+        for j, term in enumerate(terms[i:i+charts_per_row]):
+            with cols[j]:
+                chart = create_yoy_monthly_chart(long_df, term)
+                if chart:
+                    st.altair_chart(chart, use_container_width=True)
+                else:
+                    st.info(f"No YoY data for {term}")
+
+    # Create YoY absolute difference charts for all terms
+    st.subheader("YoY Absolute Difference by Month")
+    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year.")
+    
+    for i in range(0, len(terms), charts_per_row):
+        cols = st.columns(charts_per_row)
+        for j, term in enumerate(terms[i:i+charts_per_row]):
+            with cols[j]:
+                chart = create_yoy_absolute_chart(long_df, term)
+                if chart:
+                    st.altair_chart(chart, use_container_width=True)
+                else:
+                    st.info(f"No YoY data for {term}")
+
+    # Download all YoY data
+    st.subheader("Download YoY Data")
+    all_yoy_data = {}
+    for term in terms:
+        yt = yoy_table(long_df, term)
+        if not yt.empty:
+            all_yoy_data[term] = yt
+    
+    if all_yoy_data:
+        # Create combined CSV
+        combined_data = []
+        for term, yt in all_yoy_data.items():
+            yt_copy = yt.copy()
+            yt_copy['term'] = term
+            combined_data.append(yt_copy)
+        
+        if combined_data:
+            combined_df = pd.concat(combined_data, ignore_index=True)
+            st.download_button(
+                "Download All YoY Data (CSV)",
+                combined_df.to_csv(index=False).encode("utf-8"),
+                file_name="all_yoy_data.csv",
+                mime="text/csv"
             )
-            .properties(height=360)
-            .interactive()
-        )
-        st.altair_chart(ch, use_container_width=True)
-
-    with col2:
-        st.markdown(f"**{yoy_term} — % Diff vs Prior Year**")
-        pct = yt.dropna(subset=["pct_diff"]).copy()
-        ch2 = (
-            alt.Chart(pct)
-            .mark_line()
-            .encode(
-                x=alt.X("date:T", title="Date"),
-                y=alt.Y("pct_diff:Q", title="% Diff"),
-                tooltip=["date:T", alt.Tooltip("pct_diff:Q", format=".2f")]
-            )
-            .properties(height=360)
-            .interactive()
-        )
-        st.altair_chart(ch2, use_container_width=True)
-
-    st.markdown("**YoY Table**")
-    st.dataframe(yt.head(50))
-    st.download_button(
-        f"Download YoY CSV ({yoy_term})",
-        yt.to_csv(index=False).encode("utf-8"),
-        file_name=f"yoy_{yoy_term}.csv",
-        mime="text/csv"
-    )
+            
+            # Show sample of combined data
+            st.dataframe(combined_df.head(20))
 
     st.markdown("---")
     st.subheader("Explainability")
