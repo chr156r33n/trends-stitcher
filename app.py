@@ -160,11 +160,6 @@ with st.sidebar:
             st.success("Set timeframe to maximum ('all') for better date filtering!")
             st.rerun()
     
-
-    st.markdown("---")
-    st.subheader("Chart options")
-
-
     st.markdown("---")
     st.subheader("Advanced")
     # Use temp directory for cloud environments
@@ -204,6 +199,21 @@ with st.sidebar:
         if st.button("🔄 Force Reload"):
             st.session_state.data_loaded = False
             st.success("Forcing reload on next run...")
+    
+    st.markdown("---")
+    st.subheader("🔍 Autocomplete Explorer")
+    st.caption("Discover better search terms and entities")
+    
+    if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
+        if serpapi_key:
+            with st.spinner("Fetching autocomplete suggestions..."):
+                # Get terms from session state if available
+                if hasattr(st.session_state, 'terms') and st.session_state.terms:
+                    explore_autocomplete_options(st.session_state.terms, serpapi_key)
+                else:
+                    st.error("No terms available. Please run the analysis first.")
+        else:
+            st.error("Please enter your SerpAPI key first.")
     
 
 
