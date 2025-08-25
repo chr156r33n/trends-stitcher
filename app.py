@@ -7,7 +7,7 @@ import streamlit as st
 import altair as alt
 
 from stitcher import stitch_terms
-from serpapi import GoogleSearch
+import serpapi
 
 def explore_autocomplete_options(terms: list, api_key: str):
     """Explore autocomplete options for each term to find better entity-based searches"""
@@ -27,7 +27,7 @@ def explore_autocomplete_options(terms: list, api_key: str):
                 "q": term
             }
             
-            search = GoogleSearch(params)
+            search = serpapi.google_search.GoogleSearch(params)
             results = search.get_dict()
             
             if "suggestions" in results and results["suggestions"]:
