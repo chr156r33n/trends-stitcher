@@ -925,6 +925,57 @@ def create_yoy_monthly_chart_all_data(long_df: pd.DataFrame, term: str) -> alt.C
     
     return chart
 
+@st.cache_data
+def create_yoy_monthly_chart_debug(long_df: pd.DataFrame, term: str) -> alt.Chart:
+    """
+    Create a YoY chart showing all data points, including those without YoY calculations.
+    """
+    # Get YoY data for the term
+    yt = yoy_table(long_df, term)
+    
+    if yt.empty:
+        return None
+    
+    # Don't filter out NaN values - show all data
+    yt_all = yt.copy()
+    
+    # Extract month and year for visualization
+    yt_all['month'] = yt_all['date'].dt.month
+    yt_all['month_name'] = yt_all['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_all['year'] = yt_all['date'].dt.year
+    
+    # Add a flag for data points with YoY calculations
+    yt_all['has_yoy'] = yt_all['pct_diff'].notna()
+    
+    # Create the chart
+    chart = (
+        alt.Chart(yt_all)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+            y=alt.Y('pct_diff:Q', title='YoY % Difference'),
+            color=alt.Color('year:N', title='Year'),
+            opacity=alt.condition(alt.datum.has_yoy, alt.value(1), alt.value(0.3)),
+            tooltip=[
+                alt.Tooltip('year:N', title='Year'),
+                alt.Tooltip('month_name:N', title='Month'),
+                alt.Tooltip('pct_diff:Q', title='YoY % Diff', format='.2f'),
+                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
+                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f'),
+                alt.Tooltip('has_yoy:N', title='Has YoY Data')
+            ]
+        )
+        .properties(
+            title=f'{term} - YoY % Difference by Month (All Data Points)',
+            height=300,
+            width=400
+        )
+        .interactive()
+    )
+    
+    return chart
+
 if run:
     if not serpapi_key:
         st.error("Please enter your SerpAPI key.")
@@ -1128,6 +1179,18 @@ if run:
                 if not recent_data.empty:
                     st.write(f"  - 2024+ data: {len(recent_data)} rows")
                     st.write(f"  - 2024+ with pct_diff: {recent_data['pct_diff'].notna().sum()} rows")
+                    
+                    # Show which months have YoY data
+                    recent_with_yoy = recent_data[recent_data['pct_diff'].notna()]
+                    if not recent_with_yoy.empty:
+                        months_with_yoy = sorted(recent_with_yoy['date'].dt.strftime('%Y-%m').unique())
+                        st.write(f"  - 2024+ months with YoY data: {months_with_yoy}")
+                    
+                    # Show which months are missing YoY data
+                    recent_without_yoy = recent_data[recent_data['pct_diff'].isna()]
+                    if not recent_without_yoy.empty:
+                        months_without_yoy = sorted(recent_without_yoy['date'].dt.strftime('%Y-%m').unique())
+                        st.write(f"  - 2024+ months WITHOUT YoY data: {months_without_yoy}")
                 else:
                     st.write(f"  - No 2024+ data found")
                 
@@ -1142,6 +1205,7 @@ if run:
     
     # Add toggle for showing all data vs filtered data
     show_all_data = st.checkbox("Show all data (not just 5 years)", value=False)
+    show_debug_chart = st.checkbox("Show debug chart (all data points)", value=False)
     
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(3, len(terms))
@@ -1150,7 +1214,9 @@ if run:
         cols = st.columns(charts_per_row)
         for j, term in enumerate(terms[i:i+charts_per_row]):
             with cols[j]:
-                if show_all_data:
+                if show_debug_chart:
+                    chart = create_yoy_monthly_chart_debug(long_df, term)
+                elif show_all_data:
                     chart = create_yoy_monthly_chart_all_data(long_df, term)
                 else:
                     chart = create_yoy_monthly_chart(long_df, term)
