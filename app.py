@@ -172,9 +172,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Chart options")
-    show_small_multiples = st.checkbox("Small multiples (one chart per term)", value=st.session_state.show_small_multiples)
-    # Update session state
-    st.session_state.show_small_multiples = show_small_multiples
+
 
     st.markdown("---")
     st.subheader("Advanced")
@@ -731,13 +729,7 @@ if run:
         st.error("Please enter your SerpAPI key.")
         st.stop()
 
-    # Test API connection first
-    with st.spinner("Testing API connection..."):
-        if not test_api_connection(serpapi_key):
-            st.error("❌ API connection test failed. Please check your SerpAPI key and internet connection.")
-            st.stop()
-        else:
-            st.success("✅ API connection successful!")
+
 
     terms = [t.strip() for t in terms_text.splitlines() if t.strip()]
     if len(terms) < 2:
@@ -833,16 +825,6 @@ if run:
     
     df_scaled = cached_apply_smoothing(df_scaled, smoothing_days)
 
-    st.subheader("Comparable Time Series (max=100 across ALL terms)")
-    st.caption("Consensus scaling + optional smoothing + date filtering.")
-    st.dataframe(df_scaled.head(20))
-    st.download_button(
-        "Download full timeseries CSV",
-        df_scaled.to_csv(index=False).encode("utf-8"),
-        file_name="trends_stitched_scaled.csv",
-        mime="text/csv"
-    )
-
     long_df = cached_melt_long(df_scaled)
 
     # Validate data before charting
@@ -875,18 +857,22 @@ if run:
         st.info(f"Available terms: {long_df['term'].unique()}")
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
-    if show_small_multiples:
-        chart = create_small_multiples(long_df, terms)
-        if chart:
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("No data to plot.")
+    chart = create_line_chart(long_df, selected_terms, "All Terms (selected)")
+    if chart:
+        st.altair_chart(chart, use_container_width=True)
     else:
-        chart = create_line_chart(long_df, selected_terms, "All Terms (selected)")
-        if chart:
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info("No data to plot for the selected terms.")
+        st.info("No data to plot for the selected terms.")
+    
+    # Display the comparable time series table below the chart
+    st.subheader("Comparable Time Series (max=100 across ALL terms)")
+    st.caption("This table shows the trend data where all terms are scaled to the same range (0-100) so you can easily compare their relative popularity over time.")
+    st.dataframe(df_scaled.head(20))
+    st.download_button(
+        "Download full timeseries CSV",
+        df_scaled.to_csv(index=False).encode("utf-8"),
+        file_name="trends_stitched_scaled.csv",
+        mime="text/csv"
+    )
 
     st.markdown("---")
     st.subheader("Year-on-Year (YoY) Analysis")
@@ -963,7 +949,7 @@ if run:
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(2, len(terms))
     
-    st.caption("Line charts show trends over time. Red dashed line shows zero point.")
+    st.caption("These charts show how each term's popularity changed compared to the same month in previous years. The red line at zero shows no change - values above zero mean higher popularity than the previous year, below zero means lower popularity.")
     for i in range(0, len(terms), charts_per_row):
         cols = st.columns(charts_per_row)
         for j, term in enumerate(terms[i:i+charts_per_row]):
@@ -982,7 +968,7 @@ if run:
     # Create YoY absolute difference charts for all terms
     st.subheader("YoY Absolute Difference by Month")
     
-    st.caption("Line charts show trends over time. Red dashed line shows zero point.")
+    st.caption("These charts show the actual difference in popularity values (not percentages). The red line at zero shows no change - positive values mean higher popularity than the previous year, negative values mean lower popularity.")
     for i in range(0, len(terms), charts_per_row):
         cols = st.columns(charts_per_row)
         for j, term in enumerate(terms[i:i+charts_per_row]):
@@ -1033,9 +1019,7 @@ if run:
                 mime="text/csv"
             )
             
-            # Show sample of combined data
-            st.write("**Full YoY Data Sample:**")
-            st.dataframe(combined_df.head(20))
+
     
     if all_yoy_data_filtered:
         # Create combined CSV for filtered data (past 5 years)
@@ -1061,13 +1045,11 @@ if run:
                 mime="text/csv"
             )
             
-            # Show sample of filtered data
-            st.write("**3-Year YoY Data Sample:**")
-            st.dataframe(combined_filtered_df.head(20))
+
 
     st.markdown("---")
     st.subheader("Explainability")
-    st.caption("Pivot scores are *not* used for scaling; they help sanity-check anchors if you need one.")
+    st.caption("This table shows how the scaling algorithm adjusted each term's maximum value to make all terms comparable. It helps verify that the data normalization worked correctly.")
     st.dataframe(pivot_scores)
     st.download_button(
         "Download pivot scores CSV",
@@ -1077,6 +1059,7 @@ if run:
     )
 
     st.subheader("Per-Term Consensus Scale Factors")
+    st.caption("This table shows the scaling factors used to normalize each term's data. Higher scale factors mean the term was scaled up more (had lower original popularity), while lower scale factors mean the term was scaled down more (had higher original popularity).")
     scales_df = pd.DataFrame({"term": scales.index, "scale": scales.values}).sort_values("scale", ascending=False)
     st.dataframe(scales_df)
     st.download_button(
