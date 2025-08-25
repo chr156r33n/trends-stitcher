@@ -223,6 +223,83 @@ with st.sidebar:
         st.subheader("YoY Calculation Test")
         test_yoy_calculation()
     
+    # Add YoY chart data test button
+    if st.button("📈 Test YoY Chart Data"):
+        st.subheader("YoY Chart Data Test")
+        if st.session_state.df_scaled is not None and st.session_state.terms:
+            long_df = cached_melt_long(st.session_state.df_scaled)
+            for term in st.session_state.terms[:3]:  # Test first 3 terms
+                st.write(f"**Testing {term}:**")
+                yt = yoy_table(long_df, term)
+                if not yt.empty:
+                    st.write(f"  Total YoY data: {len(yt)} rows")
+                    st.write(f"  Date range: {yt['date'].min()} to {yt['date'].max()}")
+                    
+                    # Test the chart filtering
+                    yt_valid = yt.dropna(subset=['pct_diff']).copy()
+                    st.write(f"  Valid pct_diff data: {len(yt_valid)} rows")
+                    
+                    if not yt_valid.empty:
+                        latest_date = yt_valid['date'].max()
+                        five_years_ago = latest_date - pd.Timedelta(days=5*365)
+                        earliest_date = yt_valid['date'].min()
+                        start_date = max(five_years_ago, earliest_date)
+                        
+                        st.write(f"  Latest date: {latest_date}")
+                        st.write(f"  5 years ago: {five_years_ago}")
+                        st.write(f"  Filter start date: {start_date}")
+                        
+                        yt_filtered = yt_valid[yt_valid['date'] >= start_date].copy()
+                        st.write(f"  After 5-year filter: {len(yt_filtered)} rows")
+                        
+                        if not yt_filtered.empty:
+                            st.write(f"  Filtered date range: {yt_filtered['date'].min()} to {yt_filtered['date'].max()}")
+                            
+                            # Show recent data specifically
+                            recent_filtered = yt_filtered[yt_filtered['date'] >= pd.Timestamp('2024-01-01')]
+                            st.write(f"  2024+ in filtered data: {len(recent_filtered)} rows")
+                            
+                            if not recent_filtered.empty:
+                                st.write("  Recent filtered data sample:")
+                                st.dataframe(recent_filtered[['date', 'current', 'previous_year', 'pct_diff']].head(3))
+                        else:
+                            st.error("  No data after filtering!")
+                else:
+                    st.write("  No YoY data found")
+                st.write("---")
+        else:
+            st.error("No data loaded. Please run the analysis first.")
+    
+    # Add raw YoY data viewer button
+    if st.button("📋 View Raw YoY Data"):
+        st.subheader("Raw YoY Data Viewer")
+        if st.session_state.df_scaled is not None and st.session_state.terms:
+            long_df = cached_melt_long(st.session_state.df_scaled)
+            term_to_view = st.selectbox("Select term to view:", st.session_state.terms)
+            
+            if term_to_view:
+                yt = yoy_table(long_df, term_to_view)
+                if not yt.empty:
+                    st.write(f"**Raw YoY data for {term_to_view}:**")
+                    st.write(f"Total rows: {len(yt)}")
+                    st.write(f"Date range: {yt['date'].min()} to {yt['date'].max()}")
+                    
+                    # Show recent data
+                    recent_data = yt[yt['date'] >= pd.Timestamp('2024-01-01')]
+                    if not recent_data.empty:
+                        st.write(f"**2024+ data ({len(recent_data)} rows):**")
+                        st.dataframe(recent_data)
+                    else:
+                        st.write("No 2024+ data found")
+                    
+                    # Show all data
+                    st.write("**All YoY data:**")
+                    st.dataframe(yt)
+                else:
+                    st.write("No YoY data found for this term")
+        else:
+            st.error("No data loaded. Please run the analysis first.")
+    
     # Add SerpAPI timeframe test button
     if st.button("🔍 Test SerpAPI Timeframes"):
         if serpapi_key:
@@ -654,14 +731,27 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     # Get YoY data for the term
     yt = yoy_table(long_df, term)
     
-    if yt.empty or yt['pct_diff'].isna().all():
+    if yt.empty:
         return None
+    
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.debug(f"YoY chart for {term}:")
+    logger.debug(f"  Total rows: {len(yt)}")
+    logger.debug(f"  Date range: {yt['date'].min()} to {yt['date'].max()}")
+    logger.debug(f"  Rows with pct_diff: {yt['pct_diff'].notna().sum()}")
+    logger.debug(f"  Rows with abs_diff: {yt['abs_diff'].notna().sum()}")
     
     # Filter to only rows with valid YoY data
     yt_valid = yt.dropna(subset=['pct_diff']).copy()
     
     if yt_valid.empty:
+        logger.debug(f"  No valid pct_diff data found")
         return None
+    
+    logger.debug(f"  Valid rows: {len(yt_valid)}")
+    logger.debug(f"  Valid date range: {yt_valid['date'].min()} to {yt_valid['date'].max()}")
     
     # Filter to past 5 years (or less if not enough data)
     latest_date = yt_valid['date'].max()
@@ -673,11 +763,20 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     # Use the later of: 5 years ago or earliest available data
     start_date = max(five_years_ago, earliest_date)
     
+    logger.debug(f"  Latest date: {latest_date}")
+    logger.debug(f"  Five years ago: {five_years_ago}")
+    logger.debug(f"  Earliest available: {earliest_date}")
+    logger.debug(f"  Start date (filter): {start_date}")
+    
     # Filter to the selected date range
     yt_filtered = yt_valid[yt_valid['date'] >= start_date].copy()
     
     if yt_filtered.empty:
+        logger.debug(f"  No data after filtering")
         return None
+    
+    logger.debug(f"  Filtered rows: {len(yt_filtered)}")
+    logger.debug(f"  Filtered date range: {yt_filtered['date'].min()} to {yt_filtered['date'].max()}")
     
     # Extract month and year for visualization
     yt_filtered['month'] = yt_filtered['date'].dt.month
@@ -769,6 +868,55 @@ def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
         )
         .properties(
             title=f'{term} - YoY Absolute Difference by Month ({start_date.strftime("%Y")}-{latest_date.strftime("%Y")})',
+            height=300,
+            width=400
+        )
+        .interactive()
+    )
+    
+    return chart
+
+@st.cache_data
+def create_yoy_monthly_chart_all_data(long_df: pd.DataFrame, term: str) -> alt.Chart:
+    """
+    Create a YoY chart with ALL data (no 5-year filter) for debugging.
+    """
+    # Get YoY data for the term
+    yt = yoy_table(long_df, term)
+    
+    if yt.empty:
+        return None
+    
+    # Filter to only rows with valid YoY data
+    yt_valid = yt.dropna(subset=['pct_diff']).copy()
+    
+    if yt_valid.empty:
+        return None
+    
+    # Extract month and year for visualization
+    yt_valid['month'] = yt_valid['date'].dt.month
+    yt_valid['month_name'] = yt_valid['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_valid['year'] = yt_valid['date'].dt.year
+    
+    # Create the chart
+    chart = (
+        alt.Chart(yt_valid)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+            y=alt.Y('pct_diff:Q', title='YoY % Difference'),
+            color=alt.Color('year:N', title='Year'),
+            tooltip=[
+                alt.Tooltip('year:N', title='Year'),
+                alt.Tooltip('month_name:N', title='Month'),
+                alt.Tooltip('pct_diff:Q', title='YoY % Diff', format='.2f'),
+                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
+                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f')
+            ]
+        )
+        .properties(
+            title=f'{term} - YoY % Difference by Month (ALL DATA)',
             height=300,
             width=400
         )
@@ -969,10 +1117,31 @@ if run:
         for term in terms:
             yt = yoy_table(long_df, term)
             st.write(f"**{term}**: {yt.shape[0]} rows, {yt['pct_diff'].notna().sum()} with YoY data")
+            
+            # Show detailed YoY data analysis
+            if not yt.empty:
+                st.write(f"  - Date range: {yt['date'].min()} to {yt['date'].max()}")
+                st.write(f"  - Years with data: {sorted(yt['date'].dt.year.unique())}")
+                
+                # Show recent data specifically
+                recent_data = yt[yt['date'] >= pd.Timestamp('2024-01-01')]
+                if not recent_data.empty:
+                    st.write(f"  - 2024+ data: {len(recent_data)} rows")
+                    st.write(f"  - 2024+ with pct_diff: {recent_data['pct_diff'].notna().sum()} rows")
+                else:
+                    st.write(f"  - No 2024+ data found")
+                
+                # Show sample of recent data
+                if not recent_data.empty:
+                    st.write("  - Recent data sample:")
+                    st.dataframe(recent_data[['date', 'current', 'previous_year', 'pct_diff']].head(5))
 
     # Create YoY charts for all terms
     st.subheader("YoY % Difference by Month")
     st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year. Defaults to past 5 years of data.")
+    
+    # Add toggle for showing all data vs filtered data
+    show_all_data = st.checkbox("Show all data (not just 5 years)", value=False)
     
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(3, len(terms))
@@ -981,7 +1150,10 @@ if run:
         cols = st.columns(charts_per_row)
         for j, term in enumerate(terms[i:i+charts_per_row]):
             with cols[j]:
-                chart = create_yoy_monthly_chart(long_df, term)
+                if show_all_data:
+                    chart = create_yoy_monthly_chart_all_data(long_df, term)
+                else:
+                    chart = create_yoy_monthly_chart(long_df, term)
                 if chart:
                     st.altair_chart(chart, use_container_width=True)
                 else:
