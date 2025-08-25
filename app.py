@@ -40,6 +40,8 @@ if 'selected_chart_terms' not in st.session_state:
     st.session_state.selected_chart_terms = None
 if 'show_small_multiples' not in st.session_state:
     st.session_state.show_small_multiples = False
+if 'show_debug_chart' not in st.session_state:
+    st.session_state.show_debug_chart = False
 if 'smoothing_days' not in st.session_state:
     st.session_state.smoothing_days = "7"
 if 'start_date' not in st.session_state:
@@ -201,6 +203,7 @@ with st.sidebar:
 
             st.session_state.selected_chart_terms = None
             st.session_state.show_small_multiples = False
+            st.session_state.show_debug_chart = False
             st.session_state.smoothing_days = "7"
             st.session_state.start_date = None
             st.session_state.end_date = None
@@ -1238,7 +1241,8 @@ if run:
     
     # Add toggle for showing all data vs filtered data
     show_all_data = st.checkbox("Show all data (not just 5 years)", value=False)
-    show_debug_chart = st.checkbox("Show debug chart (all data points)", value=False)
+    show_debug_chart = st.checkbox("Show debug chart (all data points)", value=st.session_state.show_debug_chart)
+    st.session_state.show_debug_chart = show_debug_chart
     
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(3, len(terms))
