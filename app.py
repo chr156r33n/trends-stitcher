@@ -1277,6 +1277,7 @@ if run:
         mime="text/csv"
     )
 
+     st.markdown("---")
     st.subheader("Per-Term Consensus Scale Factors")
     st.caption("This table shows the scaling factors used to normalize each term's data. Higher scale factors mean the term was scaled up more (had lower original popularity), while lower scale factors mean the term was scaled down more (had higher original popularity).")
     scales_df = pd.DataFrame({"term": scales.index, "scale": scales.values}).sort_values("scale", ascending=False)
