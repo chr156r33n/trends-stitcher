@@ -590,6 +590,67 @@ def score_pivots(df_long: pd.DataFrame, terms: List[str]) -> pd.DataFrame:
     return df.sort_values("score", ascending=False).reset_index(drop=True)
 
 
+def apply_smoothing_to_wide(wide: pd.DataFrame, smoothing_days: str, debug: bool = False) -> pd.DataFrame:
+    """Apply smoothing to a wide dataframe (date index, term columns)"""
+    if smoothing_days == "None":
+        return wide
+    
+    log = logger.info if debug else logger.debug
+    log(f"[apply_smoothing_to_wide] Applying {smoothing_days}-day smoothing")
+    
+    k_days = int(smoothing_days)
+    out = wide.copy()
+    
+    # Calculate step size from the data
+    dates = pd.to_datetime(out.index)
+    step = infer_step_days_from_dates(dates)
+    periods = max(1, int(round(k_days / step)))
+    
+    log(f"[apply_smoothing_to_wide] Step: {step} days, periods: {periods}")
+    
+    # Check if periods is reasonable
+    if periods < 1:
+        log(f"[apply_smoothing_to_wide] Warning: Periods calculated as {periods}, setting to 1")
+        periods = 1
+    elif periods > len(out):
+        log(f"[apply_smoothing_to_wide] Warning: Periods ({periods}) greater than data length ({len(out)}), setting to data length")
+        periods = len(out)
+    
+    # Apply rolling mean to each term column
+    for col in out.columns:
+        if col != "date":  # Skip date column if present
+            original_values = out[col].copy()
+            min_periods = max(1, int(periods * 0.5))  # At least 50% of window must have data
+            
+            if debug:
+                log(f"[apply_smoothing_to_wide] Smoothing {col}: periods={periods}, min_periods={min_periods}")
+                log(f"[apply_smoothing_to_wide] {col} original range: {original_values.min():.2f} to {original_values.max():.2f}")
+            
+            # Apply rolling mean
+            smoothed_series = out[col].rolling(
+                window=periods, 
+                min_periods=min_periods,
+                center=True  # Center the window for symmetric smoothing
+            ).mean()
+            
+            out[col] = smoothed_series
+            
+            if debug:
+                log(f"[apply_smoothing_to_wide] {col} smoothed range: {out[col].min():.2f} to {out[col].max():.2f}")
+    
+    log(f"[apply_smoothing_to_wide] Smoothing complete")
+    return out
+
+
+def infer_step_days_from_dates(dates: pd.Series) -> float:
+    """Infer the step size in days from a series of dates"""
+    d = dates.sort_values().drop_duplicates()
+    if len(d) < 2:
+        return 1.0
+    diffs = d.diff().dropna().dt.days.to_numpy()
+    return float(np.median(diffs)) if len(diffs) else 1.0
+
+
 def stitch_terms(
     serpapi_key: str,
     terms: List[str],
@@ -601,6 +662,7 @@ def stitch_terms(
     verbose: bool = True,
     use_cache: bool = True,
     debug: bool = False,
+    smoothing_days: str = "None",
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
     """
     Main pipeline:
@@ -698,6 +760,13 @@ def stitch_terms(
         log(f"[stitch_terms] DEBUG: {wide.head()}")
         log(f"[stitch_terms] DEBUG: NaN count in wide: {wide.isna().sum().sum()}")
         log(f"[stitch_terms] DEBUG: Value range in wide: {wide.min().min()} to {wide.max().max()}")
+
+    # Apply smoothing to raw data before scaling (if requested)
+    if smoothing_days != "None":
+        log(f"[stitch_terms] Applying {smoothing_days}-day smoothing to raw data")
+        wide = apply_smoothing_to_wide(wide, smoothing_days, debug)
+        if debug:
+            log(f"[stitch_terms] DEBUG: After smoothing - Value range in wide: {wide.min().min()} to {wide.max().max()}")
 
     # Apply per-term scale (no per-term normalization here!)
     for t in terms:

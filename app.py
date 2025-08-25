@@ -872,6 +872,7 @@ if run:
                     st.info(f"Using cache: {use_cache}")
                     st.info(f"API timeframe: {timeframe}")
                     st.info(f"Date filters: {start_date} to {end_date}")
+                    st.info(f"Smoothing days: {smoothing_days}")
                     st.info(f"Note: API timeframe ({timeframe}) may limit available data regardless of date filters")
                 
                 df_scaled, pivot_scores, scales = stitch_terms(
@@ -885,6 +886,7 @@ if run:
                     verbose=verbose_logs,
                     use_cache=use_cache,
                     debug=show_debug,
+                    smoothing_days=smoothing_days,
                 )
 
                 if show_debug:
@@ -1089,23 +1091,12 @@ if run:
                 if term in df_scaled.columns:
                     term_data = df_scaled[['date', term]].dropna()
                     st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
-    
-    df_scaled = cached_apply_smoothing(df_scaled, smoothing_days)
-    
-    if show_debug:
-        st.write(f"Smoothing applied: {smoothing_days} days")
-        st.write(f"After smoothing shape: {df_scaled.shape}")
-        if not df_scaled.empty:
-            st.write(f"After smoothing range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
-            
-            # Show data after smoothing for each term
-            st.write("**Data after smoothing:**")
-            for term in terms:
-                if term in df_scaled.columns:
-                    term_data = df_scaled[['date', term]].dropna()
-                    st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
 
     long_df = cached_melt_long(df_scaled)
+    
+    # Show smoothing indicator
+    if smoothing_days != "None":
+        st.info(f"Applied {smoothing_days}-day smoothing to the data")
     
     if show_debug:
         st.write(f"After melting to long format: {long_df.shape}")
