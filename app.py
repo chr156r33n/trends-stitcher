@@ -196,7 +196,7 @@ def should_reload_data(current_params):
 with st.sidebar:
     st.subheader("Data")
     serpapi_key = st.text_input("SerpAPI API Key", type="password", value="")
-    terms_text = st.text_area("Terms (one per line)", "nike\nadidas\npuma\nnew balance\nasics")
+    terms_text = st.text_area("Terms (one per line)", "nike\nadidas\npuma\nnew balance\nasics\nOn Running\nSolomon")
     geo = st.text_input("Geo (e.g. GB, US — optional)", value="")
     
     # Use selectbox for timeframe with better options
