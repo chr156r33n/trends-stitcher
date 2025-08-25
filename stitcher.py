@@ -637,6 +637,17 @@ def apply_smoothing_to_wide(wide: pd.DataFrame, smoothing_days: str, debug: bool
             
             if debug:
                 log(f"[apply_smoothing_to_wide] {col} smoothed range: {out[col].min():.2f} to {out[col].max():.2f}")
+                # Show before/after comparison
+                original_sample = original_values.head(10).tolist()
+                smoothed_sample = out[col].head(10).tolist()
+                log(f"[apply_smoothing_to_wide] {col} original sample: {[f'{v:.2f}' for v in original_sample]}")
+                log(f"[apply_smoothing_to_wide] {col} smoothed sample: {[f'{v:.2f}' for v in smoothed_sample]}")
+                
+                # Check if smoothing actually changed the values
+                if not np.allclose(original_values, out[col], rtol=1e-10):
+                    log(f"[apply_smoothing_to_wide] {col} smoothing SUCCESSFUL - values changed")
+                else:
+                    log(f"[apply_smoothing_to_wide] {col} smoothing FAILED - values unchanged")
     
     log(f"[apply_smoothing_to_wide] Smoothing complete")
     return out
@@ -773,9 +784,14 @@ def stitch_terms(
     # Apply smoothing to raw data before scaling (if requested)
     if smoothing_days != "None":
         log(f"[stitch_terms] Applying {smoothing_days}-day smoothing to raw data")
+        log(f"[stitch_terms] Before smoothing - Value range in wide: {wide.min().min()} to {wide.max().max()}")
         wide = apply_smoothing_to_wide(wide, smoothing_days, debug)
         if debug:
             log(f"[stitch_terms] DEBUG: After smoothing - Value range in wide: {wide.min().min()} to {wide.max().max()}")
+            # Show sample of smoothed vs original data
+            for col in wide.columns[:2]:  # Show first 2 columns
+                if col != "date":
+                    log(f"[stitch_terms] DEBUG: {col} sample values (first 5): {wide[col].head().tolist()}")
 
     # Apply per-term scale (no per-term normalization here!)
     for t in terms:

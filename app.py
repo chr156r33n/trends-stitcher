@@ -1092,11 +1092,27 @@ if run:
                     term_data = df_scaled[['date', term]].dropna()
                     st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
 
-    long_df = cached_melt_long(df_scaled)
-    
     # Show smoothing indicator
     if smoothing_days != "None":
         st.info(f"Applied {smoothing_days}-day smoothing to the data")
+        
+        # Show smoothing effect analysis
+        if show_debug:
+            st.write("**Smoothing Effect Analysis:**")
+            for term in terms[:3]:  # Show first 3 terms
+                if term in df_scaled.columns:
+                    term_data = df_scaled[['date', term]].dropna()
+                    if not term_data.empty:
+                        st.write(f"**{term}:**")
+                        st.write(f"  - Data points: {len(term_data)}")
+                        st.write(f"  - Value range: {term_data[term].min():.4f} to {term_data[term].max():.4f}")
+                        st.write(f"  - Standard deviation: {term_data[term].std():.4f}")
+                        
+                        # Show sample of values to see if they look smoothed
+                        sample_values = term_data[term].head(10).tolist()
+                        st.write(f"  - First 10 values: {[f'{v:.2f}' for v in sample_values]}")
+    
+    long_df = cached_melt_long(df_scaled)
     
     if show_debug:
         st.write(f"After melting to long format: {long_df.shape}")
@@ -1125,7 +1141,12 @@ if run:
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
     st.caption("Tip: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
-    chart = create_line_chart(long_df, terms, "All Terms (click legend to filter)")
+    # Create the main chart
+    chart_title = "Google Trends: Comparable Time Series"
+    if smoothing_days != "None":
+        chart_title += f" ({smoothing_days}-day smoothing)"
+    
+    chart = create_line_chart(long_df, terms, chart_title)
     if chart:
         st.altair_chart(chart, use_container_width=True)
     else:
