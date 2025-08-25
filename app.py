@@ -7,7 +7,6 @@ import streamlit as st
 import altair as alt
 
 from stitcher import stitch_terms
-import serpapi
 
 def explore_autocomplete_options(terms: list, api_key: str):
     """Explore autocomplete options for each term to find better entity-based searches"""
