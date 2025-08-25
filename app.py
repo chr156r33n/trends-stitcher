@@ -381,9 +381,13 @@ def line_chart_multi(long_df: pd.DataFrame, selected_terms: list, title: str):
 
 @st.cache_data
 def create_line_chart(data, selected_terms, title):
-    """Cached version of line chart creation"""
+    """Cached version of line chart creation with interactive filtering"""
     if data.empty:
         return None
+    
+    # Create a selection for interactive filtering
+    selection = alt.selection_multi(fields=['term'], bind='legend')
+    
     chart = (
         alt.Chart(data)
         .mark_line()
@@ -391,8 +395,10 @@ def create_line_chart(data, selected_terms, title):
             x=alt.X("date:T", title="Date"),
             y=alt.Y("value:Q", title="Comparable Index (max=100 overall)"),
             color=alt.Color("term:N", legend=alt.Legend(title="Term")),
-            tooltip=["date:T", "term:N", alt.Tooltip("value:Q", format=".2f")]
+            tooltip=["date:T", "term:N", alt.Tooltip("value:Q", format=".2f")],
+            opacity=alt.condition(selection, alt.value(1), alt.value(0.2))
         )
+        .add_selection(selection)
         .properties(title=title, height=380)
         .interactive()
     )
@@ -836,19 +842,7 @@ if run:
         st.error("All values are NaN. This might indicate an API response parsing issue.")
         st.stop()
 
-    st.markdown("### Chart selection")
-    default_terms = terms[:min(5, len(terms))]
-    
-    # Use session state for selected terms, with fallback to defaults
-    if st.session_state.selected_chart_terms is None or not all(term in terms for term in st.session_state.selected_chart_terms):
-        st.session_state.selected_chart_terms = default_terms
-    
-    selected_terms = st.multiselect("Terms to chart", options=terms, default=st.session_state.selected_chart_terms)
-    if not selected_terms:
-        selected_terms = default_terms
-    
-    # Update session state with current selection
-    st.session_state.selected_chart_terms = selected_terms
+
     
 
 
@@ -857,11 +851,12 @@ if run:
         st.info(f"Available terms: {long_df['term'].unique()}")
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
-    chart = create_line_chart(long_df, selected_terms, "All Terms (selected)")
+    st.caption("💡 **Tip**: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
+    chart = create_line_chart(long_df, terms, "All Terms (click legend to filter)")
     if chart:
         st.altair_chart(chart, use_container_width=True)
     else:
-        st.info("No data to plot for the selected terms.")
+        st.info("No data to plot.")
     
     # Display the comparable time series table below the chart
     st.subheader("Comparable Time Series (max=100 across ALL terms)")
