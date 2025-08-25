@@ -881,9 +881,74 @@ if run:
                         test_df = fetcher.fetch_batch(terms[:2])  # Test with first 2 terms
                         st.success(f"Test API call successful: {test_df.shape}")
                         st.json(test_df.head(10).to_dict('records'))
+                        
+                        # Test individual term API calls
+                        st.write("**Individual Term API Tests:**")
+                        for term in terms[:3]:  # Test first 3 terms
+                            try:
+                                single_term_df = fetcher.fetch_batch([term])
+                                st.write(f"  {term}: {single_term_df.shape} data points")
+                                if not single_term_df.empty:
+                                    st.write(f"    - Date range: {single_term_df['date'].min()} to {single_term_df['date'].max()}")
+                                    st.write(f"    - Value range: {single_term_df[term].min():.2f} to {single_term_df[term].max():.2f}")
+                                    st.write(f"    - Sample: {single_term_df[term].head(3).tolist()}")
+                                else:
+                                    st.error(f"    - No data returned for {term}")
+                            except Exception as e:
+                                st.error(f"    - Error fetching {term}: {str(e)}")
+                                
                     except Exception as debug_e:
                         st.error(f"Debug API call failed: {debug_e}")
                         st.code(traceback.format_exc())
+                    
+                    # Enhanced raw data debugging
+                    st.subheader("Comprehensive Raw Data Debug")
+                    
+                    # Show raw data for each term
+                    st.write("**Raw data for each term:**")
+                    for term in terms:
+                        if term in df_scaled.columns:
+                            term_data = df_scaled[['date', term]].dropna()
+                            st.write(f"**{term}**: {len(term_data)} data points")
+                            if not term_data.empty:
+                                st.write(f"  - Date range: {term_data['date'].min()} to {term_data['date'].max()}")
+                                st.write(f"  - Value range: {term_data[term].min():.2f} to {term_data[term].max():.2f}")
+                                st.write(f"  - Non-zero values: {(term_data[term] > 0).sum()}")
+                                st.write(f"  - Zero values: {(term_data[term] == 0).sum()}")
+                                st.write(f"  - NaN values: {term_data[term].isna().sum()}")
+                                
+                                # Show sample data
+                                st.write(f"  - Sample data (first 5 rows):")
+                                st.dataframe(term_data.head())
+                            else:
+                                st.error(f"  - No data for {term}")
+                        else:
+                            st.error(f"**{term}**: Column not found in data")
+                    
+                    # Show data quality summary
+                    st.write("**Data Quality Summary:**")
+                    st.write(f"- Total terms requested: {len(terms)}")
+                    st.write(f"- Terms with data: {sum(1 for term in terms if term in df_scaled.columns)}")
+                    st.write(f"- Terms with non-zero data: {sum(1 for term in terms if term in df_scaled.columns and df_scaled[term].max() > 0)}")
+                    
+                    # Show raw data shape and info
+                    st.write("**Raw DataFrame Info:**")
+                    st.write(f"- Shape: {df_scaled.shape}")
+                    st.write(f"- Columns: {list(df_scaled.columns)}")
+                    st.write(f"- Memory usage: {df_scaled.memory_usage(deep=True).sum() / 1024:.2f} KB")
+                    
+                    # Show sample of raw data
+                    st.write("**Sample of Raw Data (first 10 rows):**")
+                    st.dataframe(df_scaled.head(10))
+                    
+                    # Show data types
+                    st.write("**Data Types:**")
+                    st.write(df_scaled.dtypes.to_dict())
+                    
+                    # Show missing data
+                    st.write("**Missing Data Summary:**")
+                    missing_data = df_scaled.isnull().sum()
+                    st.write(missing_data[missing_data > 0].to_dict() if missing_data.sum() > 0 else "No missing data")
 
                 # Store in session state
                 st.session_state.df_scaled = df_scaled
@@ -913,6 +978,13 @@ if run:
         st.write(f"Original date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
         st.write(f"Start date filter: {start_date}")
         st.write(f"End date filter: {end_date}")
+        
+        # Show data before filtering for each term
+        st.write("**Data before filtering:**")
+        for term in terms:
+            if term in df_scaled.columns:
+                term_data = df_scaled[['date', term]].dropna()
+                st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
     
     df_scaled = cached_filter_date_range(df_scaled, start_date, end_date)
     
@@ -920,10 +992,41 @@ if run:
         st.write(f"After date filtering shape: {df_scaled.shape}")
         if not df_scaled.empty:
             st.write(f"After date filtering range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+            
+            # Show data after filtering for each term
+            st.write("**Data after date filtering:**")
+            for term in terms:
+                if term in df_scaled.columns:
+                    term_data = df_scaled[['date', term]].dropna()
+                    st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
     
     df_scaled = cached_apply_smoothing(df_scaled, smoothing_days)
+    
+    if show_debug:
+        st.write(f"After smoothing shape: {df_scaled.shape}")
+        if not df_scaled.empty:
+            st.write(f"After smoothing range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
+            
+            # Show data after smoothing for each term
+            st.write("**Data after smoothing:**")
+            for term in terms:
+                if term in df_scaled.columns:
+                    term_data = df_scaled[['date', term]].dropna()
+                    st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
 
     long_df = cached_melt_long(df_scaled)
+    
+    if show_debug:
+        st.write(f"After melting to long format: {long_df.shape}")
+        st.write(f"Long format columns: {list(long_df.columns)}")
+        st.write(f"Terms in long format: {long_df['term'].unique()}")
+        st.write(f"Value range in long format: {long_df['value'].min()} to {long_df['value'].max()}")
+        
+        # Show data in long format for each term
+        st.write("**Data in long format:**")
+        for term in terms:
+            term_data = long_df[long_df['term'] == term]
+            st.write(f"  {term}: {len(term_data)} data points, max value: {term_data['value'].max():.2f}")
 
     # Validate data before charting
     if long_df.empty:
