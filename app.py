@@ -516,7 +516,7 @@ def cached_melt_long(df_scaled: pd.DataFrame) -> pd.DataFrame:
 def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     """
     Calculate year-over-year comparison for a given term.
-    Finds the closest date from the previous year for each current date.
+    Only matches exact previous year dates (365 days earlier).
     """
     # Filter data for the specific term and sort by date
     g = long_df[long_df["term"] == term].sort_values("date").copy()
@@ -527,53 +527,26 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     # Convert dates to datetime if they aren't already
     g["date"] = pd.to_datetime(g["date"])
     
-    # Create a copy for previous year data
-    g_prev = g.copy()
-    g_prev["date"] = g_prev["date"] - pd.Timedelta(days=365)
-    g_prev = g_prev.rename(columns={"value": "prior_value"})
+    # Create a lookup table for previous year data
+    # For each date in the data, calculate what the previous year date should be
+    g["prev_year_date"] = g["date"] - pd.Timedelta(days=365)
     
-    # Merge current and previous year data
-    # Use merge_asof to find the closest previous year date for each current date
-    merged = pd.merge_asof(
-        g.sort_values("date"), 
-        g_prev[["date", "prior_value"]].sort_values("date"),
-        on="date",
-        direction="backward",  # Use the most recent previous year data
-        tolerance=pd.Timedelta(days=30)  # Allow up to 30 days difference
-    )
+    # Create a mapping from current dates to values (for previous year lookup)
+    date_value_map = g.set_index("date")["value"].to_dict()
     
-    # CRITICAL FIX: Ensure previous year data is actually from the previous year
-    # Calculate what the actual previous year date should be
-    merged["expected_prev_year"] = merged["date"] - pd.Timedelta(days=365)
-    
-    # For merge_asof, we need to check if the merged date is actually from the previous year
-    # Since merge_asof doesn't return the actual matched date, we'll use a different approach
-    # We'll create a proper previous year lookup
-    
-    # Create a proper previous year mapping
-    g_prev_proper = g.copy()
-    g_prev_proper["prev_year_date"] = g_prev_proper["date"] - pd.Timedelta(days=365)
-    g_prev_proper = g_prev_proper.rename(columns={"value": "prior_value"})
-    
-    # Merge with proper previous year dates
-    merged_proper = pd.merge(
-        g,
-        g_prev_proper[["prev_year_date", "prior_value"]],
-        left_on="date",
-        right_on="prev_year_date",
-        how="left"
-    )
+    # For each row, look up the value from exactly 365 days ago
+    g["prior_value"] = g["prev_year_date"].map(date_value_map)
     
     # Calculate differences
-    merged_proper["abs_diff"] = merged_proper["value"] - merged_proper["prior_value"]
-    merged_proper["pct_diff"] = np.where(
-        merged_proper["prior_value"] > 0,
-        (merged_proper["abs_diff"] / merged_proper["prior_value"]) * 100.0,
+    g["abs_diff"] = g["value"] - g["prior_value"]
+    g["pct_diff"] = np.where(
+        g["prior_value"] > 0,
+        (g["abs_diff"] / g["prior_value"]) * 100.0,
         np.nan
     )
     
     # Return the result with proper column names
-    result = merged_proper[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
+    result = g[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
         columns={"value": "current", "prior_value": "previous_year"}
     )
     
