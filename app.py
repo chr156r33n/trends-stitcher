@@ -153,13 +153,6 @@ with st.sidebar:
     if start_date or end_date:
         st.info("💡 **Note**: Date filtering works on the data returned by the API. To get more data for filtering, consider using a longer timeframe (e.g., 'today 5-y' instead of 'today 12-m').")
     
-    # Add general guidance about timeframe
-    st.info("📊 **Timeframe Guide**:\n"
-            "• **'all'**: Maximum data range (recommended for date filtering)\n"
-            "• **1-m to 12-m**: Good for recent trends\n"
-            "• **5-y to 20-y**: Good for historical analysis\n"
-            "• **Note**: Use 'all' for maximum flexibility with date filtering")
-    
     # Add button to set maximum timeframe for date filtering
     if start_date or end_date:
         if st.button("🔄 Set Maximum Timeframe for Date Filtering"):
@@ -167,8 +160,6 @@ with st.sidebar:
             st.success("Set timeframe to maximum ('all') for better date filtering!")
             st.rerun()
     
-    # Add note about SerpAPI limitations
-    st.info("⚠️ **SerpAPI Limitation**: If you're still getting limited date ranges, SerpAPI may be overriding your timeframe. Use the '🔍 Test SerpAPI Timeframes' button to check what's actually supported.")
 
     st.markdown("---")
     st.subheader("Chart options")
@@ -214,25 +205,7 @@ with st.sidebar:
             st.session_state.data_loaded = False
             st.success("Forcing reload on next run...")
     
-    st.markdown("---")
-    st.subheader("🔍 Autocomplete Explorer")
-    st.caption("Discover better search terms and entities")
-    
-    if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
-        if serpapi_key:
-            with st.spinner("Fetching autocomplete suggestions..."):
-                # Get terms from text area if available
-                terms_text = st.session_state.get('terms_text', '')
-                if terms_text:
-                    terms_to_explore = [t.strip() for t in terms_text.splitlines() if t.strip()]
-                    if terms_to_explore:
-                        explore_autocomplete_options(terms_to_explore, serpapi_key)
-                    else:
-                        st.error("Please enter some terms in the text area first.")
-                else:
-                    st.error("Please enter some terms in the text area first.")
-        else:
-            st.error("Please enter your SerpAPI key first.")
+
 
 
 def explore_autocomplete_options(terms: list, api_key: str):
@@ -970,8 +943,13 @@ if run:
     
     # Add autocomplete exploration section
     if st.button("🔍 Explore Autocomplete Options", key="autocomplete_button"):
-        with st.spinner("Fetching autocomplete suggestions..."):
-            explore_autocomplete_options(terms, serpapi_key)
+        if serpapi_key and terms:
+            with st.spinner("Fetching autocomplete suggestions..."):
+                explore_autocomplete_options(terms, serpapi_key)
+        elif not serpapi_key:
+            st.error("Please enter your SerpAPI key first.")
+        else:
+            st.error("No terms available. Please run the analysis first.")
     
     st.markdown("---")
     st.subheader("Year-on-Year (YoY) Analysis")
