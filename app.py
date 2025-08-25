@@ -899,6 +899,9 @@ if run:
         scales = st.session_state.scales
         terms = st.session_state.terms
 
+    # TEST: Check if we get past data loading
+    st.write("🔍 TEST DATA LOADED: This should appear after data loading")
+    
     # Apply filters to the data
     if show_debug:
         st.subheader("🔍 Date Filtering Debug")
@@ -927,10 +930,9 @@ if run:
         st.error("All values are NaN. This might indicate an API response parsing issue.")
         st.stop()
 
-
+    # TEST: Check if we get past data validation
+    st.write("🔍 TEST VALIDATION PASSED: This should appear after data validation")
     
-
-
     if show_debug:
         st.info(f"Chart data shape: {long_df.shape}")
         st.info(f"Available terms: {long_df['term'].unique()}")
