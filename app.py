@@ -811,7 +811,7 @@ def create_small_multiples(data, all_terms):
 def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     """
     Create a YoY chart with month on X-axis and lines for each year.
-    Defaults to showing past 5 years of data.
+    Defaults to showing past 3 years of data.
     """
     # Get YoY data for the term
     yt = yoy_table(long_df, term)
@@ -871,10 +871,89 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_filtered['year'] = yt_filtered['date'].dt.year
     
-    # Create the chart
-    chart = (
+    # Create the line chart with zero line
+    line_chart = (
         alt.Chart(yt_filtered)
         .mark_line(point=True)
+        .encode(
+            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+            y=alt.Y('pct_diff:Q', title='YoY % Difference'),
+            color=alt.Color('year:N', title='Year'),
+            tooltip=[
+                alt.Tooltip('year:N', title='Year'),
+                alt.Tooltip('month_name:N', title='Month'),
+                alt.Tooltip('pct_diff:Q', title='YoY % Diff', format='.2f'),
+                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
+                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f')
+            ]
+        )
+        .properties(
+            title=f'{term} - YoY % Difference by Month ({start_year}-{latest_year})',
+            height=300,
+            width=400
+        )
+        .interactive()
+    )
+    
+    # Create a zero line
+    zero_line = (
+        alt.Chart(pd.DataFrame({'y': [0]}))
+        .mark_rule(color='red', strokeDash=[5, 5], strokeWidth=2)
+        .encode(y='y:Q')
+        .properties(height=300, width=400)
+    )
+    
+    # Layer the charts
+    chart = alt.layer(line_chart, zero_line)
+    
+    return chart
+
+@st.cache_data
+def create_yoy_monthly_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
+    """
+    Create a YoY bar chart with month on X-axis and bars for each year.
+    Defaults to showing past 3 years of data.
+    """
+    # Get YoY data for the term
+    yt = yoy_table(long_df, term)
+    
+    if yt.empty:
+        return None
+    
+    # Filter to only rows with valid YoY data
+    yt_valid = yt.dropna(subset=['pct_diff']).copy()
+    
+    if yt_valid.empty:
+        return None
+    
+    # Filter to past 3 years (or less if not enough data)
+    latest_date = yt_valid['date'].max()
+    latest_year = latest_date.year
+    three_years_ago_year = latest_year - 3
+    
+    # Get the actual earliest date in the data
+    earliest_date = yt_valid['date'].min()
+    earliest_year = earliest_date.year
+    
+    # Use the later of: 3 years ago or earliest available data
+    start_year = max(three_years_ago_year, earliest_year)
+    
+    # Filter to the selected year range
+    yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
+    
+    if yt_filtered.empty:
+        return None
+    
+    # Extract month and year for visualization
+    yt_filtered['month'] = yt_filtered['date'].dt.month
+    yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_filtered['year'] = yt_filtered['date'].dt.year
+    
+    # Create the bar chart
+    chart = (
+        alt.Chart(yt_filtered)
+        .mark_bar()
         .encode(
             x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
                                                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
@@ -899,10 +978,78 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     return chart
 
 @st.cache_data
+def create_yoy_absolute_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
+    """
+    Create a YoY bar chart showing absolute differences with month on X-axis.
+    Defaults to showing past 3 years of data.
+    """
+    # Get YoY data for the term
+    yt = yoy_table(long_df, term)
+    
+    if yt.empty or yt['abs_diff'].isna().all():
+        return None
+    
+    # Filter to only rows with valid YoY data
+    yt_valid = yt.dropna(subset=['abs_diff']).copy()
+    
+    if yt_valid.empty:
+        return None
+    
+    # Filter to past 3 years (or less if not enough data)
+    latest_date = yt_valid['date'].max()
+    latest_year = latest_date.year
+    three_years_ago_year = latest_year - 3
+    
+    # Get the actual earliest date in the data
+    earliest_date = yt_valid['date'].min()
+    earliest_year = earliest_date.year
+    
+    # Use the later of: 3 years ago or earliest available data
+    start_year = max(three_years_ago_year, earliest_year)
+    
+    # Filter to the selected year range
+    yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
+    
+    if yt_filtered.empty:
+        return None
+    
+    # Extract month and year for visualization
+    yt_filtered['month'] = yt_filtered['date'].dt.month
+    yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
+    yt_filtered['year'] = yt_filtered['date'].dt.year
+    
+    # Create the bar chart
+    chart = (
+        alt.Chart(yt_filtered)
+        .mark_bar()
+        .encode(
+            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
+            y=alt.Y('abs_diff:Q', title='YoY Absolute Difference'),
+            color=alt.Color('year:N', title='Year'),
+            tooltip=[
+                alt.Tooltip('year:N', title='Year'),
+                alt.Tooltip('month_name:N', title='Month'),
+                alt.Tooltip('abs_diff:Q', title='YoY Abs Diff', format='.2f'),
+                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
+                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f')
+            ]
+        )
+        .properties(
+            title=f'{term} - YoY Absolute Difference by Month ({start_year}-{latest_year})',
+            height=300,
+            width=400
+        )
+        .interactive()
+    )
+    
+    return chart
+
+@st.cache_data
 def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     """
     Create a YoY chart showing absolute differences with month on X-axis.
-    Defaults to showing past 5 years of data.
+    Defaults to showing past 3 years of data.
     """
     # Get YoY data for the term
     yt = yoy_table(long_df, term)
@@ -940,8 +1087,8 @@ def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_filtered['year'] = yt_filtered['date'].dt.year
     
-    # Create the chart
-    chart = (
+    # Create the line chart with zero line
+    line_chart = (
         alt.Chart(yt_filtered)
         .mark_line(point=True)
         .encode(
@@ -964,6 +1111,17 @@ def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
         )
         .interactive()
     )
+    
+    # Create a zero line
+    zero_line = (
+        alt.Chart(pd.DataFrame({'y': [0]}))
+        .mark_rule(color='red', strokeDash=[5, 5], strokeWidth=2)
+        .encode(y='y:Q')
+        .properties(height=300, width=400)
+    )
+    
+    # Layer the charts
+    chart = alt.layer(line_chart, zero_line)
     
     return chart
 
@@ -1292,12 +1450,15 @@ if run:
 
     # Create YoY charts for all terms
     st.subheader("YoY % Difference by Month")
-    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year. Defaults to past 3 years of data.")
+    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year. Red dashed line shows zero point. Defaults to past 3 years of data.")
     
     # Add toggle for showing all data vs filtered data
-    show_all_data = st.checkbox("Show all data (not just 5 years)", value=False)
+    show_all_data = st.checkbox("Show all data (not just 3 years)", value=False)
     show_debug_chart = st.checkbox("Show debug chart (all data points)", value=st.session_state.show_debug_chart)
     st.session_state.show_debug_chart = show_debug_chart
+    
+    # Add toggle for chart type
+    use_bar_charts = st.checkbox("Use bar charts (easier to see zero point)", value=False)
     
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(2, len(terms))
@@ -1310,6 +1471,8 @@ if run:
                     chart = create_yoy_monthly_chart_debug(long_df, term)
                 elif show_all_data:
                     chart = create_yoy_monthly_chart_all_data(long_df, term)
+                elif use_bar_charts:
+                    chart = create_yoy_monthly_bar_chart(long_df, term)
                 else:
                     chart = create_yoy_monthly_chart(long_df, term)
                 if chart:
@@ -1319,13 +1482,16 @@ if run:
 
     # Create YoY absolute difference charts for all terms
     st.subheader("YoY Absolute Difference by Month")
-    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year. Defaults to past 3 years of data.")
+    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year. Red dashed line shows zero point. Defaults to past 3 years of data.")
     
     for i in range(0, len(terms), charts_per_row):
         cols = st.columns(charts_per_row)
         for j, term in enumerate(terms[i:i+charts_per_row]):
             with cols[j]:
-                chart = create_yoy_absolute_chart(long_df, term)
+                if use_bar_charts:
+                    chart = create_yoy_absolute_bar_chart(long_df, term)
+                else:
+                    chart = create_yoy_absolute_chart(long_df, term)
                 if chart:
                     st.altair_chart(chart, use_container_width=True)
                 else:
