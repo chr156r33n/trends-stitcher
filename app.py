@@ -216,384 +216,17 @@ with st.sidebar:
             st.session_state.data_loaded = False
             st.success("Forcing reload on next run...")
     
-    # Add test button
-    if st.button("🧪 Test Data Parsing"):
-        st.subheader("Data Parsing Test")
-        test_data_parsing()
-    
-    # Add YoY test button
-    if st.button("📊 Test YoY Calculation"):
-        st.subheader("YoY Calculation Test")
-        test_yoy_calculation()
-    
-    # Add YoY chart data test button
-    if st.button("📈 Test YoY Chart Data"):
-        st.subheader("YoY Chart Data Test")
-        if st.session_state.df_scaled is not None and st.session_state.terms:
-            long_df = cached_melt_long(st.session_state.df_scaled)
-            for term in st.session_state.terms[:3]:  # Test first 3 terms
-                st.write(f"**Testing {term}:**")
-                yt = yoy_table(long_df, term)
-                if not yt.empty:
-                    st.write(f"  Total YoY data: {len(yt)} rows")
-                    st.write(f"  Date range: {yt['date'].min()} to {yt['date'].max()}")
-                    
-                    # Test the chart filtering
-                    yt_valid = yt.dropna(subset=['pct_diff']).copy()
-                    st.write(f"  Valid pct_diff data: {len(yt_valid)} rows")
-                    
-                    if not yt_valid.empty:
-                        latest_date = yt_valid['date'].max()
-                        five_years_ago = latest_date - pd.Timedelta(days=5*365)
-                        earliest_date = yt_valid['date'].min()
-                        start_date = max(five_years_ago, earliest_date)
-                        
-                        st.write(f"  Latest date: {latest_date}")
-                        st.write(f"  5 years ago: {five_years_ago}")
-                        st.write(f"  Filter start date: {start_date}")
-                        
-                        yt_filtered = yt_valid[yt_valid['date'] >= start_date].copy()
-                        st.write(f"  After 5-year filter: {len(yt_filtered)} rows")
-                        
-                        if not yt_filtered.empty:
-                            st.write(f"  Filtered date range: {yt_filtered['date'].min()} to {yt_filtered['date'].max()}")
-                            
-                            # Show recent data specifically
-                            recent_filtered = yt_filtered[yt_filtered['date'] >= pd.Timestamp('2024-01-01')]
-                            st.write(f"  2024+ in filtered data: {len(recent_filtered)} rows")
-                            
-                            if not recent_filtered.empty:
-                                st.write("  Recent filtered data sample:")
-                                st.dataframe(recent_filtered[['date', 'current', 'previous_year', 'pct_diff']].head(3))
-                        else:
-                            st.error("  No data after filtering!")
-                else:
-                    st.write("  No YoY data found")
-                st.write("---")
-        else:
-            st.error("No data loaded. Please run the analysis first.")
-    
-    # Add raw YoY data viewer button
-    if st.button("📋 View Raw YoY Data"):
-        st.subheader("Raw YoY Data Viewer")
-        if st.session_state.df_scaled is not None and st.session_state.terms:
-            long_df = cached_melt_long(st.session_state.df_scaled)
-            term_to_view = st.selectbox("Select term to view:", st.session_state.terms)
-            
-            if term_to_view:
-                yt = yoy_table(long_df, term_to_view)
-                if not yt.empty:
-                    st.write(f"**Raw YoY data for {term_to_view}:**")
-                    st.write(f"Total rows: {len(yt)}")
-                    st.write(f"Date range: {yt['date'].min()} to {yt['date'].max()}")
-                    
-                    # Show recent data
-                    recent_data = yt[yt['date'] >= pd.Timestamp('2024-01-01')]
-                    if not recent_data.empty:
-                        st.write(f"**2024+ data ({len(recent_data)} rows):**")
-                        st.dataframe(recent_data)
-                    else:
-                        st.write("No 2024+ data found")
-                    
-                    # Show all data
-                    st.write("**All YoY data:**")
-                    st.dataframe(yt)
-                else:
-                    st.write("No YoY data found for this term")
-        else:
-            st.error("No data loaded. Please run the analysis first.")
-    
-    # Add YoY date mapping test button
-    if st.button("🔍 Test YoY Date Mapping"):
-        st.subheader("YoY Date Mapping Test")
-        if st.session_state.df_scaled is not None and st.session_state.terms:
-            long_df = cached_melt_long(st.session_state.df_scaled)
-            term_to_test = st.selectbox("Select term to test:", st.session_state.terms, key="test_term")
-            
-            if term_to_test:
-                g = long_df[long_df["term"] == term_to_test].sort_values("date").copy()
-                g["date"] = pd.to_datetime(g["date"])
-                
-                # Test the old method (365 days)
-                g["prev_year_old"] = g["date"] - pd.Timedelta(days=365)
-                
-                # Test the new method (replace year)
-                g["prev_year_new"] = g["date"].apply(lambda x: x.replace(year=x.year - 1))
-                
-                # Show comparison
-                st.write("**Date Mapping Comparison:**")
-                comparison_df = g[["date", "prev_year_old", "prev_year_new"]].head(20)
-                st.dataframe(comparison_df)
-                
-                # Show if there are differences
-                differences = g[g["prev_year_old"] != g["prev_year_new"]]
-                if not differences.empty:
-                    st.write(f"**Found {len(differences)} dates with different mappings:**")
-                    st.dataframe(differences[["date", "prev_year_old", "prev_year_new"]])
-                else:
-                    st.write("✅ All date mappings are identical")
-        else:
-            st.error("No data loaded. Please run the analysis first.")
-    
-    # Add YoY chart data test button
-    if st.button("📊 Test YoY Chart Data"):
-        st.subheader("YoY Chart Data Test")
-        if st.session_state.df_scaled is not None and st.session_state.terms:
-            long_df = cached_melt_long(st.session_state.df_scaled)
-            for term in st.session_state.terms[:2]:  # Test first 2 terms
-                st.write(f"**Testing {term}:**")
-                yt = yoy_table(long_df, term)
-                if not yt.empty:
-                    st.write(f"  Total YoY data: {len(yt)} rows")
-                    st.write(f"  Date range: {yt['date'].min()} to {yt['date'].max()}")
-                    
-                    # Test the chart filtering
-                    yt_valid = yt.dropna(subset=['pct_diff']).copy()
-                    st.write(f"  Valid pct_diff data: {len(yt_valid)} rows")
-                    
-                    if not yt_valid.empty:
-                        latest_date = yt_valid['date'].max()
-                        latest_year = latest_date.year
-                        three_years_ago_year = latest_year - 3
-                        earliest_date = yt_valid['date'].min()
-                        earliest_year = earliest_date.year
-                        start_year = max(three_years_ago_year, earliest_year)
-                        
-                        st.write(f"  Latest date: {latest_date} (year: {latest_year})")
-                        st.write(f"  3 years ago year: {three_years_ago_year}")
-                        st.write(f"  Filter start year: {start_year}")
-                        
-                        yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
-                        st.write(f"  After 3-year filter: {len(yt_filtered)} rows")
-                        
-                        if not yt_filtered.empty:
-                            st.write(f"  Filtered date range: {yt_filtered['date'].min()} to {yt_filtered['date'].max()}")
-                            
-                            # Show recent data specifically
-                            recent_filtered = yt_filtered[yt_filtered['date'] >= pd.Timestamp('2024-01-01')]
-                            st.write(f"  2024+ in filtered data: {len(recent_filtered)} rows")
-                            
-                            if not recent_filtered.empty:
-                                st.write("  Recent filtered data sample:")
-                                st.dataframe(recent_filtered[['date', 'current', 'previous_year', 'pct_diff']].head(3))
-                        else:
-                            st.error("  No data after filtering!")
-                else:
-                    st.write("  No YoY data found")
-                st.write("---")
-        else:
-            st.error("No data loaded. Please run the analysis first.")
-    
-    # Add SerpAPI timeframe test button
-    if st.button("🔍 Test SerpAPI Timeframes"):
-        if serpapi_key:
-            test_serpapi_timeframes(serpapi_key)
-        else:
-            st.error("Please enter your SerpAPI key first.")
-    
-    # Add import test button
-    if st.button("🔧 Test Imports"):
-        st.subheader("Import Test")
-        try:
-            import sys
-            st.write(f"Python path: {sys.path}")
-            st.write(f"Current directory: {os.getcwd()}")
-            
-            try:
-                import stitcher
-                st.success("✅ Successfully imported stitcher module")
-                st.write(f"stitcher module location: {stitcher.__file__}")
-            except Exception as e:
-                st.error(f"❌ Failed to import stitcher: {e}")
-                
-            try:
-                from stitcher import stitch_terms
-                st.success("✅ Successfully imported stitch_terms function")
-            except Exception as e:
-                st.error(f"❌ Failed to import stitch_terms: {e}")
-                
-            try:
-                from stitcher import TrendsFetcher
-                st.success("✅ Successfully imported TrendsFetcher class")
-            except Exception as e:
-                st.error(f"❌ Failed to import TrendsFetcher: {e}")
-                
-        except Exception as e:
-            st.error(f"❌ Import test failed: {e}")
-            st.code(traceback.format_exc())
 
-def test_serpapi_timeframes(api_key: str):
-    """Test different SerpAPI timeframes to see what data ranges they actually return"""
-    import requests
     
-    test_timeframes = [
-        "all",           # Maximum data range
-        "today 1-m",
-        "today 3-m", 
-        "today 12-m",
-        "today 5-y",
-        "today 10-y",
-        "today 20-y"
-    ]
-    
-    st.subheader("🔍 SerpAPI Timeframe Test")
-    st.write("Testing what data ranges different timeframes actually return...")
-    
-    for tf in test_timeframes:
-        try:
-            params = {
-                "engine": "google_trends",
-                "q": "nike",  # Single term for testing
-                "data_type": "TIMESERIES",
-                "date": tf,
-                "api_key": api_key,
-            }
-            
-            r = requests.get("https://serpapi.com/search", params=params, timeout=30)
-            if r.status_code == 200:
-                data = r.json()
-                
-                # Check what SerpAPI actually used
-                actual_timeframe = "Unknown"
-                if 'search_parameters' in data and 'date' in data['search_parameters']:
-                    actual_timeframe = data['search_parameters']['date']
-                
-                # Get date range from data
-                date_range = "No data"
-                if 'interest_over_time' in data:
-                    io_data = data['interest_over_time']
-                    if isinstance(io_data, dict) and 'timeline_data' in io_data:
-                        timeline = io_data['timeline_data']
-                        if timeline and len(timeline) > 0:
-                            first_date = timeline[0].get('date', 'Unknown')
-                            last_date = timeline[-1].get('date', 'Unknown')
-                            date_range = f"{first_date} to {last_date}"
-                
-                st.write(f"**{tf}**: SerpAPI used '{actual_timeframe}', Data: {date_range}")
-                
-            else:
-                st.write(f"**{tf}**: HTTP {r.status_code}")
-                
-        except Exception as e:
-            st.write(f"**{tf}**: Error - {str(e)}")
 
-def test_yoy_calculation():
-    """Test function to verify YoY calculation"""
-    import pandas as pd
-    from datetime import date, timedelta
     
-    # Create test data with known YoY relationships
-    dates = pd.date_range(start='2023-01-01', end='2024-12-31', freq='D')
-    test_data = []
-    
-    for i, d in enumerate(dates):
-        # Create some test values with a known pattern
-        base_value = 50 + 10 * np.sin(i / 30)  # Seasonal pattern
-        test_data.append({
-            "date": d,
-            "term": "test_term",
-            "value": base_value
-        })
-    
-    df = pd.DataFrame(test_data)
-    st.write("Test data sample:")
-    st.write(df.head(10))
-    
-    # Test YoY calculation
-    yt = yoy_table(df, "test_term")
-    st.write("YoY calculation result:")
-    st.write(yt.head(10))
-    
-    if not yt.empty:
-        st.write(f"YoY data shape: {yt.shape}")
-        st.write(f"Non-null previous year values: {yt['previous_year'].notna().sum()}")
-        st.write(f"Non-null pct_diff values: {yt['pct_diff'].notna().sum()}")
-    else:
-        st.error("YoY calculation returned empty result")
 
-def test_data_parsing():
-    """Test function to verify data parsing"""
-    try:
-        import pandas as pd
-        from datetime import date
-        
-        # Test data similar to what you're getting from the API
-        test_data = [
-            {"date": "datetime.date(2025, 8, 24)", "term": "nike", "value": 74},
-            {"date": "datetime.date(2025, 8, 24)", "term": "adidas", "value": 45},
-            {"date": "datetime.date(2025, 8, 25)", "term": "nike", "value": 71},
-            {"date": "datetime.date(2025, 8, 25)", "term": "adidas", "value": 43},
-        ]
-        
-        # Test Unix timestamp data (like what you're getting now)
-        unix_test_data = [
-            {"date": "1723939200", "term": "nike", "value": 74},
-            {"date": "1723939200", "term": "adidas", "value": 45},
-            {"date": "1724544000", "term": "nike", "value": 71},
-            {"date": "1724544000", "term": "adidas", "value": 43},
-        ]
-        
-        # Test the date parsing
-        try:
-            from stitcher import TrendsFetcher
-            st.success("✅ Successfully imported TrendsFetcher")
-            
-            st.subheader("Testing datetime.date string parsing:")
-            for item in test_data:
-                parsed_date = TrendsFetcher._coerce_date(item["date"])
-                st.write(f"Original: {item['date']} -> Parsed: {parsed_date}")
-            
-            st.subheader("Testing Unix timestamp parsing:")
-            for item in unix_test_data:
-                parsed_date = TrendsFetcher._coerce_date(item["date"])
-                st.write(f"Original: {item['date']} -> Parsed: {parsed_date}")
-                
-        except Exception as e:
-            st.error(f"❌ Failed to import or use TrendsFetcher: {e}")
-            st.code(traceback.format_exc())
-            return None, None
-        
-        # Test DataFrame creation with Unix timestamps
-        st.subheader("Testing DataFrame with Unix timestamps:")
-        df = pd.DataFrame(unix_test_data)
-        st.write("Original DataFrame:")
-        st.write(df)
-        
-        # Test date conversion
-        df["date"] = pd.to_datetime(df["date"]).dt.date
-        st.write("After date conversion:")
-        st.write(df)
-        
-        # Test pivot
-        wide = df.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
-        st.write("Pivoted DataFrame:")
-        st.write(wide)
-        
-        return df, wide
-        
-    except Exception as e:
-        st.error(f"❌ Test failed: {e}")
-        st.code(traceback.format_exc())
-        return None, None
+    
 
-def test_api_connection(api_key: str) -> bool:
-    """Simple test to verify API connectivity"""
-    try:
-        import requests
-        test_params = {
-            "engine": "google_trends",
-            "q": "test",
-            "data_type": "TIMESERIES",
-            "time": "today 1-m",
-            "api_key": api_key,
-        }
-        r = requests.get("https://serpapi.com/search", params=test_params, timeout=30)
-        if r.status_code == 200:
-            data = r.json()
-            return not bool(data.get("error") or data.get("error_message"))
-        return False
-    except Exception:
-        return False
+    
+
+
+
 
 def infer_step_days(dates: pd.Series) -> float:
     d = pd.to_datetime(dates).sort_values().drop_duplicates()
@@ -909,143 +542,9 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     
     return chart
 
-@st.cache_data
-def create_yoy_monthly_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
-    """
-    Create a YoY bar chart with month on X-axis and bars for each year.
-    Defaults to showing past 3 years of data.
-    """
-    # Get YoY data for the term
-    yt = yoy_table(long_df, term)
-    
-    if yt.empty:
-        return None
-    
-    # Filter to only rows with valid YoY data
-    yt_valid = yt.dropna(subset=['pct_diff']).copy()
-    
-    if yt_valid.empty:
-        return None
-    
-    # Filter to past 3 years (or less if not enough data)
-    latest_date = yt_valid['date'].max()
-    latest_year = latest_date.year
-    three_years_ago_year = latest_year - 3
-    
-    # Get the actual earliest date in the data
-    earliest_date = yt_valid['date'].min()
-    earliest_year = earliest_date.year
-    
-    # Use the later of: 3 years ago or earliest available data
-    start_year = max(three_years_ago_year, earliest_year)
-    
-    # Filter to the selected year range
-    yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
-    
-    if yt_filtered.empty:
-        return None
-    
-    # Extract month and year for visualization
-    yt_filtered['month'] = yt_filtered['date'].dt.month
-    yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
-    yt_filtered['year'] = yt_filtered['date'].dt.year
-    
-    # Create the bar chart with bars side by side
-    chart = (
-        alt.Chart(yt_filtered)
-        .mark_bar()
-        .encode(
-            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
-            y=alt.Y('pct_diff:Q', title='YoY % Difference'),
-            color=alt.Color('year:N', title='Year'),
-            column=alt.Column('year:N', title=''),  # This creates side-by-side bars
-            tooltip=[
-                alt.Tooltip('year:N', title='Year'),
-                alt.Tooltip('month_name:N', title='Month'),
-                alt.Tooltip('pct_diff:Q', title='YoY % Diff', format='.2f'),
-                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
-                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f')
-            ]
-        )
-        .properties(
-            title=f'{term} - YoY % Difference by Month ({start_year}-{latest_year})',
-            height=300,
-            width=100  # Smaller width since we're using columns
-        )
-        .interactive()
-    )
-    
-    return chart
 
-@st.cache_data
-def create_yoy_absolute_bar_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
-    """
-    Create a YoY bar chart showing absolute differences with month on X-axis.
-    Defaults to showing past 3 years of data.
-    """
-    # Get YoY data for the term
-    yt = yoy_table(long_df, term)
-    
-    if yt.empty or yt['abs_diff'].isna().all():
-        return None
-    
-    # Filter to only rows with valid YoY data
-    yt_valid = yt.dropna(subset=['abs_diff']).copy()
-    
-    if yt_valid.empty:
-        return None
-    
-    # Filter to past 3 years (or less if not enough data)
-    latest_date = yt_valid['date'].max()
-    latest_year = latest_date.year
-    three_years_ago_year = latest_year - 3
-    
-    # Get the actual earliest date in the data
-    earliest_date = yt_valid['date'].min()
-    earliest_year = earliest_date.year
-    
-    # Use the later of: 3 years ago or earliest available data
-    start_year = max(three_years_ago_year, earliest_year)
-    
-    # Filter to the selected year range
-    yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
-    
-    if yt_filtered.empty:
-        return None
-    
-    # Extract month and year for visualization
-    yt_filtered['month'] = yt_filtered['date'].dt.month
-    yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
-    yt_filtered['year'] = yt_filtered['date'].dt.year
-    
-    # Create the bar chart with bars side by side
-    chart = (
-        alt.Chart(yt_filtered)
-        .mark_bar()
-        .encode(
-            x=alt.X('month_name:N', title='Month', sort=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                                                        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']),
-            y=alt.Y('abs_diff:Q', title='YoY Absolute Difference'),
-            color=alt.Color('year:N', title='Year'),
-            column=alt.Column('year:N', title=''),  # This creates side-by-side bars
-            tooltip=[
-                alt.Tooltip('year:N', title='Year'),
-                alt.Tooltip('month_name:N', title='Month'),
-                alt.Tooltip('abs_diff:Q', title='YoY Abs Diff', format='.2f'),
-                alt.Tooltip('current:Q', title='Current Value', format='.2f'),
-                alt.Tooltip('previous_year:Q', title='Previous Year', format='.2f')
-            ]
-        )
-        .properties(
-            title=f'{term} - YoY Absolute Difference by Month ({start_year}-{latest_year})',
-            height=300,
-            width=100  # Smaller width since we're using columns
-        )
-        .interactive()
-    )
-    
-    return chart
+
+
 
 @st.cache_data
 def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
@@ -1461,69 +960,38 @@ if run:
     
 
     
-    # Create tabs for different chart types
-    tab1, tab2 = st.tabs(["📈 Line Charts", "📊 Bar Charts"])
-    
     # Calculate how many charts per row based on number of terms
     charts_per_row = min(2, len(terms))
     
-    with tab1:
-        st.caption("Line charts show trends over time. Red dashed line shows zero point.")
-        for i in range(0, len(terms), charts_per_row):
-            cols = st.columns(charts_per_row)
-            for j, term in enumerate(terms[i:i+charts_per_row]):
-                with cols[j]:
-                    if show_debug_chart:
-                        chart = create_yoy_monthly_chart_debug(long_df, term)
-                    elif show_all_data:
-                        chart = create_yoy_monthly_chart_all_data(long_df, term)
-                    else:
-                        chart = create_yoy_monthly_chart(long_df, term)
-                    if chart:
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.info(f"No YoY data for {term}")
-    
-    with tab2:
-        st.caption("Bar charts make it easier to see the zero point and compare magnitudes. One chart per row for better visibility.")
-        for term in terms:
-            if show_debug_chart:
-                chart = create_yoy_monthly_chart_debug(long_df, term)
-            elif show_all_data:
-                chart = create_yoy_monthly_chart_all_data(long_df, term)
-            else:
-                chart = create_yoy_monthly_bar_chart(long_df, term)
-            if chart:
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info(f"No YoY data for {term}")
+    st.caption("Line charts show trends over time. Red dashed line shows zero point.")
+    for i in range(0, len(terms), charts_per_row):
+        cols = st.columns(charts_per_row)
+        for j, term in enumerate(terms[i:i+charts_per_row]):
+            with cols[j]:
+                if show_debug_chart:
+                    chart = create_yoy_monthly_chart_debug(long_df, term)
+                elif show_all_data:
+                    chart = create_yoy_monthly_chart_all_data(long_df, term)
+                else:
+                    chart = create_yoy_monthly_chart(long_df, term)
+                if chart:
+                    st.altair_chart(chart, use_container_width=True)
+                else:
+                    st.info(f"No YoY data for {term}")
 
     # Create YoY absolute difference charts for all terms
     st.subheader("YoY Absolute Difference by Month")
     
-    # Create tabs for different chart types
-    tab3, tab4 = st.tabs(["📈 Line Charts", "📊 Bar Charts"])
-    
-    with tab3:
-        st.caption("Line charts show trends over time. Red dashed line shows zero point.")
-        for i in range(0, len(terms), charts_per_row):
-            cols = st.columns(charts_per_row)
-            for j, term in enumerate(terms[i:i+charts_per_row]):
-                with cols[j]:
-                    chart = create_yoy_absolute_chart(long_df, term)
-                    if chart:
-                        st.altair_chart(chart, use_container_width=True)
-                    else:
-                        st.info(f"No YoY data for {term}")
-    
-    with tab4:
-        st.caption("Bar charts make it easier to see the zero point and compare magnitudes. One chart per row for better visibility.")
-        for term in terms:
-            chart = create_yoy_absolute_bar_chart(long_df, term)
-            if chart:
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info(f"No YoY data for {term}")
+    st.caption("Line charts show trends over time. Red dashed line shows zero point.")
+    for i in range(0, len(terms), charts_per_row):
+        cols = st.columns(charts_per_row)
+        for j, term in enumerate(terms[i:i+charts_per_row]):
+            with cols[j]:
+                chart = create_yoy_absolute_chart(long_df, term)
+                if chart:
+                    st.altair_chart(chart, use_container_width=True)
+                else:
+                    st.info(f"No YoY data for {term}")
 
     # Download all YoY data
     st.subheader("Download YoY Data")
