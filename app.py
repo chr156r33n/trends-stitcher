@@ -937,6 +937,7 @@ if run:
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
     st.caption("💡 **Tip**: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
+    st.write("🔍 TEST BEFORE CHART: This should appear before the main chart")
     chart = create_line_chart(long_df, terms, "All Terms (click legend to filter)")
     if chart:
         st.altair_chart(chart, use_container_width=True)
