@@ -358,20 +358,46 @@ def apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFram
     periods = max(1, int(round(k_days / step)))
     
     logger.debug(f"Calculated step: {step} days, periods: {periods}")
+    logger.debug(f"k_days: {k_days}, step: {step}, periods: {periods}")
+    
+    # Check if periods is reasonable
+    if periods < 1:
+        logger.warning(f"Periods calculated as {periods}, setting to 1")
+        periods = 1
+    elif periods > len(out):
+        logger.warning(f"Periods ({periods}) greater than data length ({len(out)}), setting to data length")
+        periods = len(out)
     
     wide = out.set_index("date").sort_index()
     
+    # Debug: Show what columns we're smoothing
+    term_columns = [c for c in wide.columns if c != "date"]
+    logger.debug(f"Columns to smooth: {term_columns}")
+    logger.debug(f"Data length: {len(wide)}")
+    
     # Improved rolling window with better edge handling
-    for col in [c for c in wide.columns if c != "date"]:
+    for col in term_columns:
         # Use center=True for symmetric windows and handle NaN values properly
         # Require at least 50% of the window to have data for a valid calculation
         min_periods = max(1, int(periods * 0.5))  # At least 50% of window must have data
         original_values = wide[col].copy()
-        wide[col] = wide[col].rolling(
+        
+        # Debug: Show original values before smoothing
+        logger.debug(f"Column {col}: original range {original_values.min():.2f} to {original_values.max():.2f}")
+        logger.debug(f"Column {col}: periods={periods}, min_periods={min_periods}")
+        
+        # Apply rolling mean
+        smoothed_series = wide[col].rolling(
             window=periods, 
             min_periods=min_periods,
             center=True  # Center the window for symmetric smoothing
         ).mean()
+        
+        wide[col] = smoothed_series
+        
+        # Debug: Show smoothed values
+        smoothed_values = wide[col]
+        logger.debug(f"Column {col}: smoothed range {smoothed_values.min():.2f} to {smoothed_values.max():.2f}")
         
         # Log smoothing statistics
         nan_before = original_values.isna().sum()
@@ -1067,6 +1093,7 @@ if run:
     df_scaled = cached_apply_smoothing(df_scaled, smoothing_days)
     
     if show_debug:
+        st.write(f"Smoothing applied: {smoothing_days} days")
         st.write(f"After smoothing shape: {df_scaled.shape}")
         if not df_scaled.empty:
             st.write(f"After smoothing range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
