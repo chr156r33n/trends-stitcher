@@ -354,17 +354,17 @@ with st.sidebar:
                     if not yt_valid.empty:
                         latest_date = yt_valid['date'].max()
                         latest_year = latest_date.year
-                        five_years_ago_year = latest_year - 5
+                        three_years_ago_year = latest_year - 3
                         earliest_date = yt_valid['date'].min()
                         earliest_year = earliest_date.year
-                        start_year = max(five_years_ago_year, earliest_year)
+                        start_year = max(three_years_ago_year, earliest_year)
                         
                         st.write(f"  Latest date: {latest_date} (year: {latest_year})")
-                        st.write(f"  5 years ago year: {five_years_ago_year}")
+                        st.write(f"  3 years ago year: {three_years_ago_year}")
                         st.write(f"  Filter start year: {start_year}")
                         
                         yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
-                        st.write(f"  After 5-year filter: {len(yt_filtered)} rows")
+                        st.write(f"  After 3-year filter: {len(yt_filtered)} rows")
                         
                         if not yt_filtered.empty:
                             st.write(f"  Filtered date range: {yt_filtered['date'].min()} to {yt_filtered['date'].max()}")
@@ -838,24 +838,24 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     logger.debug(f"  Valid rows: {len(yt_valid)}")
     logger.debug(f"  Valid date range: {yt_valid['date'].min()} to {yt_valid['date'].max()}")
     
-    # Filter to past 5 years (or less if not enough data)
+    # Filter to past 3 years (or less if not enough data)
     # Use a more robust method that handles leap years properly
     latest_date = yt_valid['date'].max()
     latest_year = latest_date.year
-    five_years_ago_year = latest_year - 5
+    three_years_ago_year = latest_year - 3
     
     # Get the actual earliest date in the data
     earliest_date = yt_valid['date'].min()
     earliest_year = earliest_date.year
     
-    # Use the later of: 5 years ago or earliest available data
-    start_year = max(five_years_ago_year, earliest_year)
+    # Use the later of: 3 years ago or earliest available data
+    start_year = max(three_years_ago_year, earliest_year)
     
     # Filter to the selected year range
     yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
     
     logger.debug(f"  Latest date: {latest_date} (year: {latest_year})")
-    logger.debug(f"  Five years ago year: {five_years_ago_year}")
+    logger.debug(f"  Three years ago year: {three_years_ago_year}")
     logger.debug(f"  Earliest year: {earliest_year}")
     logger.debug(f"  Start year (filter): {start_year}")
     
@@ -916,18 +916,18 @@ def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     if yt_valid.empty:
         return None
     
-    # Filter to past 5 years (or less if not enough data)
+    # Filter to past 3 years (or less if not enough data)
     # Use a more robust method that handles leap years properly
     latest_date = yt_valid['date'].max()
     latest_year = latest_date.year
-    five_years_ago_year = latest_year - 5
+    three_years_ago_year = latest_year - 3
     
     # Get the actual earliest date in the data
     earliest_date = yt_valid['date'].min()
     earliest_year = earliest_date.year
     
-    # Use the later of: 5 years ago or earliest available data
-    start_year = max(five_years_ago_year, earliest_year)
+    # Use the later of: 3 years ago or earliest available data
+    start_year = max(three_years_ago_year, earliest_year)
     
     # Filter to the selected year range
     yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
@@ -1292,7 +1292,7 @@ if run:
 
     # Create YoY charts for all terms
     st.subheader("YoY % Difference by Month")
-    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year. Defaults to past 5 years of data.")
+    st.caption("Month on X-axis, YoY % difference on Y-axis. Each line represents a different year. Defaults to past 3 years of data.")
     
     # Add toggle for showing all data vs filtered data
     show_all_data = st.checkbox("Show all data (not just 5 years)", value=False)
@@ -1300,7 +1300,7 @@ if run:
     st.session_state.show_debug_chart = show_debug_chart
     
     # Calculate how many charts per row based on number of terms
-    charts_per_row = min(3, len(terms))
+    charts_per_row = min(2, len(terms))
     
     for i in range(0, len(terms), charts_per_row):
         cols = st.columns(charts_per_row)
@@ -1319,7 +1319,7 @@ if run:
 
     # Create YoY absolute difference charts for all terms
     st.subheader("YoY Absolute Difference by Month")
-    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year. Defaults to past 5 years of data.")
+    st.caption("Month on X-axis, YoY absolute difference on Y-axis. Each line represents a different year. Defaults to past 3 years of data.")
     
     for i in range(0, len(terms), charts_per_row):
         cols = st.columns(charts_per_row)
@@ -1341,15 +1341,15 @@ if run:
         if not yt.empty:
             all_yoy_data[term] = yt
             
-            # Create filtered version (past 5 years)
+            # Create filtered version (past 3 years)
             yt_valid = yt.dropna(subset=['pct_diff']).copy()
             if not yt_valid.empty:
                 latest_date = yt_valid['date'].max()
                 latest_year = latest_date.year
-                five_years_ago_year = latest_year - 5
+                three_years_ago_year = latest_year - 3
                 earliest_date = yt_valid['date'].min()
                 earliest_year = earliest_date.year
-                start_year = max(five_years_ago_year, earliest_year)
+                start_year = max(three_years_ago_year, earliest_year)
                 yt_filtered = yt_valid[yt_valid['date'].dt.year >= start_year].copy()
                 if not yt_filtered.empty:
                     all_yoy_data_filtered[term] = yt_filtered
@@ -1390,17 +1390,17 @@ if run:
             if not combined_filtered_df.empty:
                 date_range_start = combined_filtered_df['date'].min()
                 date_range_end = combined_filtered_df['date'].max()
-                st.info(f"📅 **5-Year YoY Data Range**: {date_range_start.strftime('%Y-%m-%d')} to {date_range_end.strftime('%Y-%m-%d')}")
+                st.info(f"📅 **3-Year YoY Data Range**: {date_range_start.strftime('%Y-%m-%d')} to {date_range_end.strftime('%Y-%m-%d')}")
             
             st.download_button(
-                "Download YoY Data (Past 5 Years)",
+                "Download YoY Data (Past 3 Years)",
                 combined_filtered_df.to_csv(index=False).encode("utf-8"),
-                file_name="yoy_data_past_5_years.csv",
+                file_name="yoy_data_past_3_years.csv",
                 mime="text/csv"
             )
             
             # Show sample of filtered data
-            st.write("**5-Year YoY Data Sample:**")
+            st.write("**3-Year YoY Data Sample:**")
             st.dataframe(combined_filtered_df.head(20))
 
     st.markdown("---")
