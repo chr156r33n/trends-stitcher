@@ -228,6 +228,35 @@ with st.sidebar:
     
     group_size = st.slider("Batch size (max 5)", 2, 5, 5)
 
+    # Move buttons above autocomplete explorer
+    run = st.button("Run")
+    
+    # Add cache management buttons
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🗑️ Clear Cache"):
+            st.session_state.data_loaded = False
+            st.session_state.df_scaled = None
+            st.session_state.pivot_scores = None
+            st.session_state.scales = None
+            st.session_state.terms = None
+            st.session_state.current_params = None
+
+            st.session_state.selected_chart_terms = None
+            st.session_state.show_small_multiples = False
+            st.session_state.show_debug_chart = False
+            st.session_state.smoothing_days = "7"
+            st.session_state.start_date = None
+            st.session_state.end_date = None
+            st.session_state.timeframe = "all"
+            st.success("Cache cleared! Click 'Run' to reload data.")
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Force Reload"):
+            st.session_state.data_loaded = False
+            st.success("Forcing reload on next run...")
+
     st.markdown("---")
     st.subheader("🔍 Autocomplete Explorer")
     st.caption("Discover better search terms and entities")
@@ -268,44 +297,17 @@ with st.sidebar:
             st.rerun()
     
     st.markdown("---")
-    st.subheader("Advanced")
-    # Use temp directory for cloud environments
-    import tempfile
-    import os
-    default_cache = tempfile.gettempdir() if os.environ.get('STREAMLIT_SERVER_RUN_ON_SAVE') else ".cache"
-    cache_dir = st.text_input("Cache directory", value=default_cache)
-    sleep_ms = st.number_input("Request sleep (ms)", min_value=0, value=250)
-    use_cache = st.checkbox("Use cache", value=True)
-    show_debug = st.checkbox("Show debug logs", value=False)
-    verbose_logs = st.checkbox("Verbose logging", value=False)
-
-    run = st.button("Run")
-    
-    # Add cache management buttons
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🗑️ Clear Cache"):
-            st.session_state.data_loaded = False
-            st.session_state.df_scaled = None
-            st.session_state.pivot_scores = None
-            st.session_state.scales = None
-            st.session_state.terms = None
-            st.session_state.current_params = None
-
-            st.session_state.selected_chart_terms = None
-            st.session_state.show_small_multiples = False
-            st.session_state.show_debug_chart = False
-            st.session_state.smoothing_days = "7"
-            st.session_state.start_date = None
-            st.session_state.end_date = None
-            st.session_state.timeframe = "all"
-            st.success("Cache cleared! Click 'Run' to reload data.")
-            st.rerun()
-    
-    with col2:
-        if st.button("🔄 Force Reload"):
-            st.session_state.data_loaded = False
-            st.success("Forcing reload on next run...")
+    with st.expander("⚙️ Advanced Options", expanded=False):
+        st.subheader("Advanced")
+        # Use temp directory for cloud environments
+        import tempfile
+        import os
+        default_cache = tempfile.gettempdir() if os.environ.get('STREAMLIT_SERVER_RUN_ON_SAVE') else ".cache"
+        cache_dir = st.text_input("Cache directory", value=default_cache)
+        sleep_ms = st.number_input("Request sleep (ms)", min_value=0, value=250)
+        use_cache = st.checkbox("Use cache", value=True)
+        show_debug = st.checkbox("Show debug logs", value=False)
+        verbose_logs = st.checkbox("Verbose logging", value=False)
 
 def infer_step_days(dates: pd.Series) -> float:
     d = pd.to_datetime(dates).sort_values().drop_duplicates()
@@ -1142,83 +1144,84 @@ if run:
 
 
     st.markdown("---")
-    st.subheader("Explainability")
-    st.caption("This table shows how the scaling algorithm adjusted each term's maximum value to make all terms comparable. It helps verify that the data normalization worked correctly.")
-    st.dataframe(pivot_scores)
-    st.download_button(
-        "Download pivot scores CSV",
-        pivot_scores.to_csv(index=False).encode("utf-8"),
-        file_name="pivot_scores.csv",
-        mime="text/csv",
-        key="pivot_scores_download"
-    )
+    with st.expander("📊 Detailed Analysis & Validation", expanded=False):
+        st.subheader("Explainability")
+        st.caption("This table shows how the scaling algorithm adjusted each term's maximum value to make all terms comparable. It helps verify that the data normalization worked correctly.")
+        st.dataframe(pivot_scores)
+        st.download_button(
+            "Download pivot scores CSV",
+            pivot_scores.to_csv(index=False).encode("utf-8"),
+            file_name="pivot_scores.csv",
+            mime="text/csv",
+            key="pivot_scores_download"
+        )
 
-    st.markdown("---")
-    st.subheader("Per-Term Consensus Scale Factors")
-    st.caption("This table shows the scaling factors used to normalize each term's data. Higher scale factors mean the term was scaled up more (had lower original popularity), while lower scale factors mean the term was scaled down more (had higher original popularity).")
-    scales_df = pd.DataFrame({"term": scales.index, "scale": scales.values}).sort_values("scale", ascending=False)
-    st.dataframe(scales_df)
-    st.download_button(
-        "Download scale factors CSV",
-        scales_df.to_csv(index=False).encode("utf-8"),
-        file_name="scale_factors.csv",
-        mime="text/csv",
-        key="scale_factors_download"
-    )
-    
-    # Add algorithm validation table
-    st.subheader("Algorithm Validation - Scaling Details")
-    st.caption("This table shows the original maximum values and how they were scaled to make terms comparable. The reference term has a scale of 1.0 and its original maximum becomes 100 in the normalized data.")
-    
-    # Get original maximum values from the data
-    original_max_values = {}
-    for term in terms:
-        if term in df_scaled.columns:
-            original_max_values[term] = df_scaled[term].max()
-        else:
-            original_max_values[term] = 0
-    
-    # Create validation table
-    validation_data = []
-    for term in terms:
-        original_max = original_max_values.get(term, 0)
-        scale = scales.get(term, 1.0)
-        normalized_max = original_max * scale
+        st.markdown("---")
+        st.subheader("Per-Term Consensus Scale Factors")
+        st.caption("This table shows the scaling factors used to normalize each term's data. Higher scale factors mean the term was scaled up more (had lower original popularity), while lower scale factors mean the term was scaled down more (had higher original popularity).")
+        scales_df = pd.DataFrame({"term": scales.index, "scale": scales.values}).sort_values("scale", ascending=False)
+        st.dataframe(scales_df)
+        st.download_button(
+            "Download scale factors CSV",
+            scales_df.to_csv(index=False).encode("utf-8"),
+            file_name="scale_factors.csv",
+            mime="text/csv",
+            key="scale_factors_download"
+        )
         
-        validation_data.append({
-            "Term": term,
-            "Original Max": round(original_max, 2),
-            "Scale Factor": round(scale, 4),
-            "Normalized Max": round(normalized_max, 2),
-            "Reference Term": "Yes" if scale == 1.0 else "No"
-        })
-    
-    validation_df = pd.DataFrame(validation_data)
-    validation_df = validation_df.sort_values("Original Max", ascending=False)
-    st.dataframe(validation_df, use_container_width=True)
-    
-    # Add download button for validation data
-    st.download_button(
-        "Download algorithm validation CSV",
-        validation_df.to_csv(index=False).encode("utf-8"),
-        file_name="algorithm_validation.csv",
-        mime="text/csv",
-        key="algorithm_validation_download"
-    )
-    
-    # Add summary statistics
-    st.subheader("Scaling Summary")
-    reference_term = validation_df[validation_df['Reference Term'] == 'Yes']['Term'].iloc[0] if not validation_df[validation_df['Reference Term'] == 'Yes'].empty else "Unknown"
-    max_original = validation_df['Original Max'].max()
-    min_original = validation_df['Original Max'].min()
-    
-    st.write(f"**Reference Term**: {reference_term}")
-    st.write(f"**Original Popularity Range**: {min_original:.2f} to {max_original:.2f}")
-    st.write(f"**Scaling Ratio**: {max_original/min_original:.1f}:1 (most to least popular)")
-    
-    if max_original/min_original > 10:
-        st.info("⚠️ **Large Popularity Gap**: The most popular term is significantly more popular than the least popular term. Scaling makes them comparable but the original data had very different popularity levels.")
-    elif max_original/min_original > 5:
-        st.warning("⚠️ **Moderate Popularity Gap**: There's a notable difference in original popularity between terms.")
-    else:
-        st.success("✅ **Good Popularity Balance**: Terms have relatively similar original popularity levels.")
+        # Add algorithm validation table
+        st.subheader("Algorithm Validation - Scaling Details")
+        st.caption("This table shows the original maximum values and how they were scaled to make terms comparable. The reference term has a scale of 1.0 and its original maximum becomes 100 in the normalized data.")
+        
+        # Get original maximum values from the data
+        original_max_values = {}
+        for term in terms:
+            if term in df_scaled.columns:
+                original_max_values[term] = df_scaled[term].max()
+            else:
+                original_max_values[term] = 0
+        
+        # Create validation table
+        validation_data = []
+        for term in terms:
+            original_max = original_max_values.get(term, 0)
+            scale = scales.get(term, 1.0)
+            normalized_max = original_max * scale
+            
+            validation_data.append({
+                "Term": term,
+                "Original Max": round(original_max, 2),
+                "Scale Factor": round(scale, 4),
+                "Normalized Max": round(normalized_max, 2),
+                "Reference Term": "Yes" if scale == 1.0 else "No"
+            })
+        
+        validation_df = pd.DataFrame(validation_data)
+        validation_df = validation_df.sort_values("Original Max", ascending=False)
+        st.dataframe(validation_df, use_container_width=True)
+        
+        # Add download button for validation data
+        st.download_button(
+            "Download algorithm validation CSV",
+            validation_df.to_csv(index=False).encode("utf-8"),
+            file_name="algorithm_validation.csv",
+            mime="text/csv",
+            key="algorithm_validation_download"
+        )
+        
+        # Add summary statistics
+        st.subheader("Scaling Summary")
+        reference_term = validation_df[validation_df['Reference Term'] == 'Yes']['Term'].iloc[0] if not validation_df[validation_df['Reference Term'] == 'Yes'].empty else "Unknown"
+        max_original = validation_df['Original Max'].max()
+        min_original = validation_df['Original Max'].min()
+        
+        st.write(f"**Reference Term**: {reference_term}")
+        st.write(f"**Original Popularity Range**: {min_original:.2f} to {max_original:.2f}")
+        st.write(f"**Scaling Ratio**: {max_original/min_original:.1f}:1 (most to least popular)")
+        
+        if max_original/min_original > 10:
+            st.info("⚠️ **Large Popularity Gap**: The most popular term is significantly more popular than the least popular term. Scaling makes them comparable but the original data had very different popularity levels.")
+        elif max_original/min_original > 5:
+            st.warning("⚠️ **Moderate Popularity Gap**: There's a notable difference in original popularity between terms.")
+        else:
+            st.success("✅ **Good Popularity Balance**: Terms have relatively similar original popularity levels.")
