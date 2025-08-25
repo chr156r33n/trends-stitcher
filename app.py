@@ -133,8 +133,6 @@ if 'show_small_multiples' not in st.session_state:
     st.session_state.show_small_multiples = False
 if 'show_debug_chart' not in st.session_state:
     st.session_state.show_debug_chart = False
-if 'smoothing_days' not in st.session_state:
-    st.session_state.smoothing_days = "7"
 if 'start_date' not in st.session_state:
     st.session_state.start_date = None
 if 'end_date' not in st.session_state:
@@ -246,7 +244,6 @@ with st.sidebar:
             st.session_state.selected_chart_terms = None
             st.session_state.show_small_multiples = False
             st.session_state.show_debug_chart = False
-            st.session_state.smoothing_days = "7"
             st.session_state.start_date = None
             st.session_state.end_date = None
             st.session_state.timeframe = "all"
@@ -275,12 +272,7 @@ with st.sidebar:
     
 
     st.markdown("---")
-    st.subheader("Smoothing & Range")
-    smoothing_options = ["None", "3", "7", "30", "90", "365"]
-    smoothing_index = smoothing_options.index(st.session_state.smoothing_days) if st.session_state.smoothing_days in smoothing_options else 2
-    smoothing_days = st.selectbox("Smoothing window", smoothing_options, index=smoothing_index)
-    st.session_state.smoothing_days = smoothing_days
-    
+    st.subheader("Date Range")
     start_date = st.date_input("Start date (optional)", value=st.session_state.start_date)
     st.session_state.start_date = start_date
     end_date = st.date_input("End date (optional)", value=st.session_state.end_date)
@@ -314,18 +306,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("[Learn more about Trend Stitching](https://www.chris-green.net/post/trends-stitcher)")
 
-def infer_step_days(dates: pd.Series) -> float:
-    d = pd.to_datetime(dates).sort_values().drop_duplicates()
-    if len(d) < 2:
-        return 1.0
-    diffs = d.diff().dropna().dt.days.to_numpy()
-    return float(np.median(diffs)) if len(diffs) else 1.0
-    d = pd.to_datetime(dates).sort_values().drop_duplicates()
-    if len(d) < 2:
-        return 1.0
-    diffs = d.diff().dropna().dt.days.to_numpy()
-    return float(np.median(diffs)) if len(diffs) else 1.0
-
 def filter_date_range(df_scaled: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
     df = df_scaled.copy()
     df["date"] = pd.to_datetime(df["date"])
@@ -339,79 +319,6 @@ def filter_date_range(df_scaled: pd.DataFrame, start_date, end_date) -> pd.DataF
 def cached_filter_date_range(df_scaled: pd.DataFrame, start_date, end_date) -> pd.DataFrame:
     """Cached version of date range filtering"""
     return filter_date_range(df_scaled, start_date, end_date)
-
-def apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFrame:
-    if smoothing_days == "None":
-        return df_scaled
-    
-    # Add debugging info
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.debug(f"Applying smoothing with window: {smoothing_days} days")
-    logger.debug(f"Input data shape: {df_scaled.shape}")
-    logger.debug(f"Input date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
-    
-    k_days = int(smoothing_days)
-    out = df_scaled.copy()
-    out["date"] = pd.to_datetime(out["date"])
-    step = infer_step_days(out["date"])
-    periods = max(1, int(round(k_days / step)))
-    
-    logger.debug(f"Calculated step: {step} days, periods: {periods}")
-    logger.debug(f"k_days: {k_days}, step: {step}, periods: {periods}")
-    
-    # Check if periods is reasonable
-    if periods < 1:
-        logger.warning(f"Periods calculated as {periods}, setting to 1")
-        periods = 1
-    elif periods > len(out):
-        logger.warning(f"Periods ({periods}) greater than data length ({len(out)}), setting to data length")
-        periods = len(out)
-    
-    wide = out.set_index("date").sort_index()
-    
-    # Debug: Show what columns we're smoothing
-    term_columns = [c for c in wide.columns if c != "date"]
-    logger.debug(f"Columns to smooth: {term_columns}")
-    logger.debug(f"Data length: {len(wide)}")
-    
-    # Improved rolling window with better edge handling
-    for col in term_columns:
-        # Use center=True for symmetric windows and handle NaN values properly
-        # Require at least 50% of the window to have data for a valid calculation
-        min_periods = max(1, int(periods * 0.5))  # At least 50% of window must have data
-        original_values = wide[col].copy()
-        
-        # Debug: Show original values before smoothing
-        logger.debug(f"Column {col}: original range {original_values.min():.2f} to {original_values.max():.2f}")
-        logger.debug(f"Column {col}: periods={periods}, min_periods={min_periods}")
-        
-        # Apply rolling mean
-        smoothed_series = wide[col].rolling(
-            window=periods, 
-            min_periods=min_periods,
-            center=True  # Center the window for symmetric smoothing
-        ).mean()
-        
-        wide[col] = smoothed_series
-        
-        # Debug: Show smoothed values
-        smoothed_values = wide[col]
-        logger.debug(f"Column {col}: smoothed range {smoothed_values.min():.2f} to {smoothed_values.max():.2f}")
-        
-        # Log smoothing statistics
-        nan_before = original_values.isna().sum()
-        nan_after = wide[col].isna().sum()
-        logger.debug(f"Column {col}: NaN before={nan_before}, after={nan_after}, periods={periods}, min_periods={min_periods}")
-    
-    result = wide.reset_index()
-    logger.debug(f"Smoothed data shape: {result.shape}")
-    return result
-
-@st.cache_data
-def cached_apply_smoothing(df_scaled: pd.DataFrame, smoothing_days: str) -> pd.DataFrame:
-    """Cached version of smoothing"""
-    return apply_smoothing(df_scaled, smoothing_days)
 
 def melt_long(df_scaled: pd.DataFrame) -> pd.DataFrame:
     long = df_scaled.melt(id_vars=["date"], var_name="term", value_name="value")
@@ -872,7 +779,6 @@ if run:
                     st.info(f"Using cache: {use_cache}")
                     st.info(f"API timeframe: {timeframe}")
                     st.info(f"Date filters: {start_date} to {end_date}")
-                    st.info(f"Smoothing days: {smoothing_days}")
                     st.info(f"Note: API timeframe ({timeframe}) may limit available data regardless of date filters")
                 
                 df_scaled, pivot_scores, scales = stitch_terms(
@@ -886,7 +792,6 @@ if run:
                     verbose=verbose_logs,
                     use_cache=use_cache,
                     debug=show_debug,
-                    smoothing_days=smoothing_days,
                 )
 
                 if show_debug:
@@ -1064,69 +969,10 @@ if run:
         terms = st.session_state.terms
 
     # Apply filters to the data
-    if show_debug:
-        st.subheader("Date Filtering Debug")
-        st.write(f"Original data shape: {df_scaled.shape}")
-        st.write(f"Original date range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
-        st.write(f"Start date filter: {start_date}")
-        st.write(f"End date filter: {end_date}")
-        
-        # Show data before filtering for each term
-        st.write("**Data before filtering:**")
-        for term in terms:
-            if term in df_scaled.columns:
-                term_data = df_scaled[['date', term]].dropna()
-                st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
-    
     df_scaled = cached_filter_date_range(df_scaled, start_date, end_date)
-    
-    if show_debug:
-        st.write(f"After date filtering shape: {df_scaled.shape}")
-        if not df_scaled.empty:
-            st.write(f"After date filtering range: {df_scaled['date'].min()} to {df_scaled['date'].max()}")
-            
-            # Show data after filtering for each term
-            st.write("**Data after date filtering:**")
-            for term in terms:
-                if term in df_scaled.columns:
-                    term_data = df_scaled[['date', term]].dropna()
-                    st.write(f"  {term}: {len(term_data)} data points, max value: {term_data[term].max():.2f}")
-
-    # Show smoothing indicator
-    if smoothing_days != "None":
-        st.info(f"Applied {smoothing_days}-day smoothing to the data")
-        
-        # Show smoothing effect analysis
-        if show_debug:
-            st.write("**Smoothing Effect Analysis:**")
-            for term in terms[:3]:  # Show first 3 terms
-                if term in df_scaled.columns:
-                    term_data = df_scaled[['date', term]].dropna()
-                    if not term_data.empty:
-                        st.write(f"**{term}:**")
-                        st.write(f"  - Data points: {len(term_data)}")
-                        st.write(f"  - Value range: {term_data[term].min():.4f} to {term_data[term].max():.4f}")
-                        st.write(f"  - Standard deviation: {term_data[term].std():.4f}")
-                        
-                        # Show sample of values to see if they look smoothed
-                        sample_values = term_data[term].head(10).tolist()
-                        st.write(f"  - First 10 values: {[f'{v:.2f}' for v in sample_values]}")
     
     long_df = cached_melt_long(df_scaled)
     
-    if show_debug:
-        st.write(f"After melting to long format: {long_df.shape}")
-        st.write(f"Long format columns: {list(long_df.columns)}")
-        st.write(f"Terms in long format: {long_df['term'].unique()}")
-        st.write(f"Value range in long format: {long_df['value'].min()} to {long_df['value'].max()}")
-        
-        # Show data in long format for each term
-        st.write("**Data in long format:**")
-        for term in terms:
-            term_data = long_df[long_df['term'] == term]
-            st.write(f"  {term}: {len(term_data)} data points, max value: {term_data['value'].max():.2f}")
-
-    # Validate data before charting
     if long_df.empty:
         st.error("No data available for charting. Please check your API key and terms.")
         st.stop()
@@ -1143,8 +989,6 @@ if run:
     st.caption("Tip: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
     # Create the main chart
     chart_title = "Google Trends: Comparable Time Series"
-    if smoothing_days != "None":
-        chart_title += f" ({smoothing_days}-day smoothing)"
     
     chart = create_line_chart(long_df, terms, chart_title)
     if chart:
