@@ -763,9 +763,19 @@ def ribbon_bounds_from_pairs(term: str, pm: pd.DataFrame, q: float = 0.84) -> Tu
     cv = np.nanmean(rel["cv_log"].values)
     if not np.isfinite(cv) or cv <= 0:
         return (1.0, 1.0)
-    sd = float(cv)  # proxy on log space
+    
+    # Cap the coefficient of variation to prevent extreme bounds
+    # This prevents ribbons from going too far beyond the 0-100 scale
+    cv_capped = min(cv, 1.5)  # Cap at 1.5 to keep bounds reasonable
+    
+    sd = float(cv_capped)  # proxy on log space
     lo = np.exp(-sd)
     hi = np.exp(+sd)
+    
+    # Additional safety cap on the multipliers
+    lo = max(lo, 0.1)  # Don't go below 10% of the value
+    hi = min(hi, 3.0)  # Don't go above 300% of the value
+    
     return (lo, hi)
 
 
@@ -1061,6 +1071,21 @@ if run:
     # Show helpful message if ribbons are enabled but no stability data
     if show_ribbons and ('pair_metrics' not in st.session_state or st.session_state.pair_metrics is None or st.session_state.pair_metrics.empty):
         st.info("💡 **Fan-out bands require stability data.** Run the analysis first to enable instability bands on the chart.")
+    
+    # Show ribbon bounds info when enabled
+    if show_ribbons and 'pair_metrics' in st.session_state and st.session_state.pair_metrics is not None and not st.session_state.pair_metrics.empty:
+        pm = st.session_state.pair_metrics
+        ribbon_info = []
+        for t in terms:
+            lo, hi = ribbon_bounds_from_pairs(t, pm)
+            if np.isfinite(lo) and np.isfinite(hi):
+                ribbon_info.append(f"{t}: {lo:.2f}x to {hi:.2f}x")
+        if ribbon_info:
+            st.caption(f"💡 **Ribbon bounds:** {', '.join(ribbon_info)}. Values show the uncertainty range multipliers applied to each term.")
+        
+        # Add explanation for 2-term case
+        if len(terms) == 2:
+            st.caption("📊 **Note:** With 2 terms, instability measures batch-to-batch variation. If terms appear in multiple batches, this shows how consistent their relationship is across different contexts.")
     
     # Create the main chart
     chart_title = "Google Trends: Comparable Time Series"
@@ -1406,7 +1431,15 @@ if run:
     # Stability Diagnostics Section - Always available in accordion
     with st.expander("Stability Diagnostics", expanded=show_stability):
         st.subheader("Stability Diagnostics")
-        st.caption("These diagnostics help identify inconsistencies in Google Trends data across different batches and time periods. Lower values indicate more stable/consistent comparisons between terms.")
+        st.caption("These diagnostics help identify inconsistencies in Google Trends data across different batches during the stitching process. Lower values indicate more stable/consistent comparisons between terms across batches.")
+        
+        # Add explanation for different term counts
+        if len(terms) == 2:
+            st.info("📊 **2 Terms Analysis:** Instability measures batch-to-batch variation in the ratio between these 2 terms. High instability means the API returns different relative values when the terms are fetched in different contexts.")
+        elif len(terms) == 3:
+            st.info("📊 **3 Terms Analysis:** Instability measures consistency of ratios across different batches. Each term pair may appear in multiple batches with different context terms.")
+        else:
+            st.info(f"📊 **{len(terms)} Terms Analysis:** Instability measures how consistently term relationships are preserved across different batches during the stitching process.")
 
         if 'pair_metrics' in st.session_state and not st.session_state.pair_metrics.empty:
             pm = st.session_state.pair_metrics.copy()

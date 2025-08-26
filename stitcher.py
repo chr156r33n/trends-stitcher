@@ -475,30 +475,41 @@ def robust_ratio(a: np.ndarray, b: np.ndarray) -> Tuple[float, float, int]:
 
 def pairwise_ratio_samples(df_long: pd.DataFrame) -> pd.DataFrame:
     """
-    Return ALL observed ratios for each pair across all (batch_id, date).
-    One row per observation: term_i, term_j, ratio, batch_id, date
+    Return ratios for each pair aggregated by batch (not by date).
+    One row per batch observation: term_i, term_j, ratio, batch_id
+    Only measures batch-to-batch instability, not temporal volatility.
     """
     rows = []
-    for (bid, d), g in df_long.groupby(["batch_id", "date"], sort=False):
-        w = g.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
-        if w.empty or w.shape[1] < 2:
+    
+    # First, aggregate data by batch (average across all dates in each batch)
+    batch_aggregated = df_long.groupby(["batch_id", "term"], as_index=False)["value"].mean()
+    
+    # Then calculate ratios between terms within each batch
+    for bid in batch_aggregated["batch_id"].unique():
+        batch_data = batch_aggregated[batch_aggregated["batch_id"] == bid]
+        if len(batch_data) < 2:
             continue
-        s = w.iloc[0].astype(float)
-        terms = list(s.index)
+            
+        # Create a simple lookup for this batch
+        term_values = dict(zip(batch_data["term"], batch_data["value"]))
+        terms = list(term_values.keys())
+        
         for i, j in itertools.combinations(range(len(terms)), 2):
             ti, tj = terms[i], terms[j]
-            vi, vj = float(s.iloc[i]), float(s.iloc[j])
+            vi, vj = term_values[ti], term_values[tj]
             if vi > 0 and vj > 0 and np.isfinite(vi) and np.isfinite(vj):
-                rows.append({"term_i": ti, "term_j": tj, "ratio": vi / vj, "batch_id": bid, "date": d})
-                rows.append({"term_i": tj, "term_j": ti, "ratio": vj / vi, "batch_id": bid, "date": d})
+                rows.append({"term_i": ti, "term_j": tj, "ratio": vi / vj, "batch_id": bid})
+                rows.append({"term_i": tj, "term_j": ti, "ratio": vj / vi, "batch_id": bid})
+    
     return pd.DataFrame(rows)
 
 
 def instability_metrics(samples: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Summarise instability per pair and per term.
+    Summarise batch-to-batch instability per pair and per term.
     Pairwise metrics: median, MAD, IQR, min, max, count, CV on log-ratio.
     Per-term score: average of pairwise CVs involving the term (lower=more stable).
+    Only measures variation across different batches, not temporal variation.
     """
     if samples.empty:
         return (pd.DataFrame(columns=[
