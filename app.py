@@ -169,6 +169,8 @@ st.title("Google Trend Stitcher")
 # Show cache status
 if st.session_state.data_loaded:
     st.success(f"Data loaded: {len(st.session_state.terms) if st.session_state.terms else 0} terms, {st.session_state.df_scaled.shape[0] if st.session_state.df_scaled is not None else 0} data points")
+    if 'pair_metrics' in st.session_state and st.session_state.pair_metrics is not None and not st.session_state.pair_metrics.empty:
+        st.info("📊 **Stability diagnostics available!** Expand the 'Stability Diagnostics' section below to analyze data consistency and variability.")
 else:
     st.info("No data loaded. Enter parameters and click 'Run' to fetch data.")
 
@@ -339,6 +341,9 @@ with st.sidebar:
         show_debug = st.checkbox("Show debug logs", value=st.session_state.get('show_debug', False), key='show_debug_checkbox')
         verbose_logs = st.checkbox("Verbose logging", value=st.session_state.get('verbose_logs', False), key='verbose_logs_checkbox')
         show_stability = st.checkbox("Show stability diagnostics (overlap variance)", value=st.session_state.get('show_stability', False), key='show_stability_checkbox')
+        show_ribbons = st.checkbox("Show fan-out (instability) bands", value=st.session_state.get('show_ribbons', False), key='show_ribbons_checkbox')
+        if show_ribbons:
+            st.caption("💡 Shows uncertainty bands on the main chart based on pairwise ratio variability")
 
     # Add link to blog post at bottom of sidebar
     st.markdown("---")
@@ -1053,15 +1058,16 @@ if run:
 
     st.caption("Tip: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
     
-    # Add ribbon checkbox
-    show_ribbons = st.checkbox("Show fan-out (instability) bands", value=st.session_state.get('show_ribbons', False), key='show_ribbons_checkbox')
+    # Show helpful message if ribbons are enabled but no stability data
+    if show_ribbons and ('pair_metrics' not in st.session_state or st.session_state.pair_metrics is None or st.session_state.pair_metrics.empty):
+        st.info("💡 **Fan-out bands require stability data.** Run the analysis first to enable instability bands on the chart.")
     
     # Create the main chart
     chart_title = "Google Trends: Comparable Time Series"
     
     chart = create_line_chart(long_df, terms, chart_title)
     if chart:
-        if show_stability and show_ribbons and 'pair_metrics' in st.session_state:
+        if show_ribbons and 'pair_metrics' in st.session_state and not st.session_state.pair_metrics.empty:
             pm = st.session_state.pair_metrics
             # Build bands for selected_terms (or all terms)
             bands = []
@@ -1395,9 +1401,8 @@ if run:
         else:
             st.success("Good Popularity Balance: Terms have relatively similar original popularity levels.")
     
-    # Stability Diagnostics Section
-    if show_stability:
-        st.markdown("---")
+    # Stability Diagnostics Section - Always available in accordion
+    with st.expander("Stability Diagnostics", expanded=show_stability):
         st.subheader("Stability Diagnostics")
         st.caption("These diagnostics help identify inconsistencies in Google Trends data across different batches and time periods. Lower values indicate more stable/consistent comparisons between terms.")
 
