@@ -1090,7 +1090,9 @@ if run:
                             y2="hi:Q",
                             color=alt.Color("term:N", legend=None)
                         ))
-                st.altair_chart(band + chart, use_container_width=True)
+                # Layer the charts and ensure the main chart's legend is preserved
+                layered_chart = alt.layer(band, chart).resolve_scale(color='independent')
+                st.altair_chart(layered_chart, use_container_width=True)
             else:
                 st.altair_chart(chart, use_container_width=True)
         else:
