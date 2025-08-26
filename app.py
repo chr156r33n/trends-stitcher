@@ -1,5 +1,6 @@
 from datetime import date
 import traceback
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -140,6 +141,28 @@ if 'end_date' not in st.session_state:
 if 'timeframe' not in st.session_state:
     st.session_state.timeframe = "all"
 
+# Initialize stability diagnostics session state
+if 'pair_metrics' not in st.session_state:
+    st.session_state.pair_metrics = None
+if 'term_instability' not in st.session_state:
+    st.session_state.term_instability = None
+if 'ratio_samples' not in st.session_state:
+    st.session_state.ratio_samples = None
+
+# Initialize toggle states
+if 'show_debug' not in st.session_state:
+    st.session_state.show_debug = False
+if 'verbose_logs' not in st.session_state:
+    st.session_state.verbose_logs = False
+if 'show_stability' not in st.session_state:
+    st.session_state.show_stability = False
+if 'show_ribbons' not in st.session_state:
+    st.session_state.show_ribbons = False
+if 'show_all_data' not in st.session_state:
+    st.session_state.show_all_data = False
+if 'use_cache' not in st.session_state:
+    st.session_state.use_cache = True
+
 st.set_page_config(page_title="Google Trend Stitcher", layout="wide")
 st.title("Google Trend Stitcher")
 
@@ -247,6 +270,20 @@ with st.sidebar:
             st.session_state.start_date = None
             st.session_state.end_date = None
             st.session_state.timeframe = "all"
+            
+            # Clear stability diagnostics
+            st.session_state.pair_metrics = None
+            st.session_state.term_instability = None
+            st.session_state.ratio_samples = None
+            
+            # Reset toggle states
+            st.session_state.show_debug = False
+            st.session_state.verbose_logs = False
+            st.session_state.show_stability = False
+            st.session_state.show_ribbons = False
+            st.session_state.show_all_data = False
+            st.session_state.use_cache = True
+            
             st.success("Cache cleared! Click 'Run' to reload data.")
             st.rerun()
     
@@ -298,9 +335,10 @@ with st.sidebar:
         default_cache = tempfile.gettempdir() if os.environ.get('STREAMLIT_SERVER_RUN_ON_SAVE') else ".cache"
         cache_dir = st.text_input("Cache directory", value=default_cache)
         sleep_ms = st.number_input("Request sleep (ms)", min_value=0, value=250)
-        use_cache = st.checkbox("Use cache", value=True)
-        show_debug = st.checkbox("Show debug logs", value=False)
-        verbose_logs = st.checkbox("Verbose logging", value=False)
+        use_cache = st.checkbox("Use cache", value=st.session_state.get('use_cache', True), key='use_cache_checkbox')
+        show_debug = st.checkbox("Show debug logs", value=st.session_state.get('show_debug', False), key='show_debug_checkbox')
+        verbose_logs = st.checkbox("Verbose logging", value=st.session_state.get('verbose_logs', False), key='verbose_logs_checkbox')
+        show_stability = st.checkbox("Show stability diagnostics (overlap variance)", value=st.session_state.get('show_stability', False), key='show_stability_checkbox')
 
     # Add link to blog post at bottom of sidebar
     st.markdown("---")
@@ -705,6 +743,27 @@ def create_yoy_monthly_chart_all_data(long_df: pd.DataFrame, term: str) -> alt.C
     
     return chart
 
+def ribbon_bounds_from_pairs(term: str, pm: pd.DataFrame, q: float = 0.84) -> Tuple[float,float]:
+    """
+    Approximate a global multiplier band per term using median and dispersion
+    of its pairwise ratios.
+    Returns (lo_mult, hi_mult). q=0.84 ~ ~1 SD equivalent for normal.
+    """
+    rel = pm[pm["term_i"] == term]
+    if rel.empty:
+        return (1.0, 1.0)
+    # construct a symmetric relative uncertainty ~ exp(±sd_log)
+    # use cv_log as proxy: sd_log ≈ cv_log * |mean_log| (rough)
+    # keep it conservative if NaN
+    cv = np.nanmean(rel["cv_log"].values)
+    if not np.isfinite(cv) or cv <= 0:
+        return (1.0, 1.0)
+    sd = float(cv)  # proxy on log space
+    lo = np.exp(-sd)
+    hi = np.exp(+sd)
+    return (lo, hi)
+
+
 @st.cache_data
 def create_yoy_monthly_chart_debug(long_df: pd.DataFrame, term: str) -> alt.Chart:
     """
@@ -781,7 +840,7 @@ if run:
                     st.info(f"Date filters: {start_date} to {end_date}")
                     st.info(f"Note: API timeframe ({timeframe}) may limit available data regardless of date filters")
                 
-                df_scaled, pivot_scores, scales = stitch_terms(
+                df_scaled, pivot_scores, scales, pair_metrics, term_instability, ratio_samples = stitch_terms(
                     serpapi_key=serpapi_key,
                     terms=terms,
                     geo=geo,
@@ -919,6 +978,9 @@ if run:
                 st.session_state.terms = terms
                 st.session_state.data_loaded = True
                 st.session_state.current_params = current_params
+                st.session_state.pair_metrics = pair_metrics
+                st.session_state.term_instability = term_instability
+                st.session_state.ratio_samples = ratio_samples
                 
                 # Show scaling analysis in debug mode
                 if show_debug:
@@ -967,6 +1029,9 @@ if run:
         pivot_scores = st.session_state.pivot_scores
         scales = st.session_state.scales
         terms = st.session_state.terms
+        pair_metrics = st.session_state.pair_metrics
+        term_instability = st.session_state.term_instability
+        ratio_samples = st.session_state.ratio_samples
 
     # Apply filters to the data
     df_scaled = cached_filter_date_range(df_scaled, start_date, end_date)
@@ -987,12 +1052,43 @@ if run:
         st.info(f"Value range: {long_df['value'].min()} to {long_df['value'].max()}")
 
     st.caption("Tip: Click on terms in the legend to show/hide them. Click multiple times to select multiple terms.")
+    
+    # Add ribbon checkbox
+    show_ribbons = st.checkbox("Show fan-out (instability) bands", value=st.session_state.get('show_ribbons', False), key='show_ribbons_checkbox')
+    
     # Create the main chart
     chart_title = "Google Trends: Comparable Time Series"
     
     chart = create_line_chart(long_df, terms, chart_title)
     if chart:
-        st.altair_chart(chart, use_container_width=True)
+        if show_stability and show_ribbons and 'pair_metrics' in st.session_state:
+            pm = st.session_state.pair_metrics
+            # Build bands for selected_terms (or all terms)
+            bands = []
+            for t in terms:
+                lo, hi = ribbon_bounds_from_pairs(t, pm)
+                if not np.isfinite(lo) or not np.isfinite(hi):
+                    continue
+                tmp = long_df[long_df["term"]==t][["date","value"]].copy()
+                tmp["term"] = t
+                tmp["lo"] = tmp["value"] * lo
+                tmp["hi"] = tmp["value"] * hi
+                bands.append(tmp)
+            if bands:
+                band_df = pd.concat(bands, ignore_index=True)
+                band = (alt.Chart(band_df)
+                        .mark_area(opacity=0.2)
+                        .encode(
+                            x="date:T",
+                            y="lo:Q",
+                            y2="hi:Q",
+                            color=alt.Color("term:N", legend=None)
+                        ))
+                st.altair_chart(band + chart, use_container_width=True)
+            else:
+                st.altair_chart(chart, use_container_width=True)
+        else:
+            st.altair_chart(chart, use_container_width=True)
     else:
         st.info("No data to plot.")
     
@@ -1107,9 +1203,8 @@ if run:
 
     
     # Add toggle for showing all data vs filtered data
-    show_all_data = st.checkbox("Show all data (not just 3 years)", value=False)
-    show_debug_chart = st.checkbox("Show debug chart (all data points)", value=st.session_state.show_debug_chart)
-    st.session_state.show_debug_chart = show_debug_chart
+    show_all_data = st.checkbox("Show all data (not just 3 years)", value=st.session_state.get('show_all_data', False), key='show_all_data_checkbox')
+    show_debug_chart = st.checkbox("Show debug chart (all data points)", value=st.session_state.get('show_debug_chart', False), key='show_debug_chart_checkbox')
     
 
     
@@ -1300,3 +1395,96 @@ if run:
         else:
             st.success("Good Popularity Balance: Terms have relatively similar original popularity levels.")
     
+    # Stability Diagnostics Section
+    if show_stability:
+        st.markdown("---")
+        st.subheader("Stability Diagnostics")
+        st.caption("These diagnostics help identify inconsistencies in Google Trends data across different batches and time periods. Lower values indicate more stable/consistent comparisons between terms.")
+
+        if 'pair_metrics' in st.session_state and not st.session_state.pair_metrics.empty:
+            pm = st.session_state.pair_metrics.copy()
+            st.caption("Pairwise instability (lower CV on log-ratio = more stable).")
+            st.dataframe(pm.sort_values("cv_log", na_position="last").head(20))
+
+            # Heatmap matrix of cv_log
+            st.markdown("**Pairwise instability heatmap (cv_log)**")
+            # build square matrix
+            all_terms = sorted(set(pm["term_i"]).union(pm["term_j"]))
+            mat = pd.DataFrame(index=all_terms, columns=all_terms, dtype=float)
+            for _, r in pm.iterrows():
+                mat.loc[r["term_i"], r["term_j"]] = r["cv_log"]
+            mat = mat.replace([np.inf, -np.inf], np.nan)
+
+            hm_data = (mat
+                       .reset_index()
+                       .melt(id_vars="index", var_name="term_j", value_name="cv_log")
+                       .rename(columns={"index":"term_i"}))
+
+            heat = (alt.Chart(hm_data)
+                    .mark_rect()
+                    .encode(
+                        x=alt.X("term_j:N", title=""),
+                        y=alt.Y("term_i:N", title=""),
+                        color=alt.Color("cv_log:Q", title="cv(log ratio)", scale=alt.Scale(scheme="reds")),
+                        tooltip=["term_i:N","term_j:N", alt.Tooltip("cv_log:Q", format=".3f")]
+                    )
+                    .properties(height=400))
+            st.altair_chart(heat, use_container_width=True)
+
+            # Box/violin of ratio variability for selected pairs
+            st.markdown("**Distribution of observed ratios (selected pairs)**")
+            rs = st.session_state.ratio_samples
+            pair_opts = sorted({(a,b) for a,b in zip(rs["term_i"], rs["term_j"]) if a!=b})
+            default_pairs = [p for p in pair_opts if p[0]==terms[0]][:3] or pair_opts[:3]
+            pick = st.multiselect("Pairs", options=[f"{a} :: {b}" for a,b in pair_opts],
+                                  default=[f"{a} :: {b}" for a,b in default_pairs])
+            if pick:
+                sel = []
+                for p in pick:
+                    a,b = [x.strip() for x in p.split("::")]
+                    sel.append(rs[(rs["term_i"]==a) & (rs["term_j"]==b)].assign(pair=p))
+                dist = pd.concat(sel, ignore_index=True) if sel else pd.DataFrame(columns=rs.columns)
+                if not dist.empty:
+                    box = (alt.Chart(dist)
+                           .mark_boxplot()
+                           .encode(x=alt.X("pair:N", title="Pair"),
+                                   y=alt.Y("ratio:Q", title="Observed ratio"),
+                                   tooltip=["pair:N", alt.Tooltip("ratio:Q", format=".3f")])
+                           .properties(height=300))
+                    st.altair_chart(box, use_container_width=True)
+
+            # Per-term "instability score"
+            st.markdown("**Per-term instability score**")
+            ti = st.session_state.term_instability.sort_values("instability_score")
+            st.dataframe(ti)
+            
+            # Download stability diagnostics data
+            st.markdown("**Download Stability Diagnostics Data**")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.download_button(
+                    "Download Pair Metrics CSV",
+                    pm.to_csv(index=False).encode("utf-8"),
+                    file_name="pairwise_instability_metrics.csv",
+                    mime="text/csv",
+                    key="pair_metrics_download"
+                )
+            
+            with col2:
+                st.download_button(
+                    "Download Term Instability CSV",
+                    ti.to_csv(index=False).encode("utf-8"),
+                    file_name="term_instability_scores.csv",
+                    mime="text/csv",
+                    key="term_instability_download"
+                )
+            
+            with col3:
+                st.download_button(
+                    "Download Ratio Samples CSV",
+                    st.session_state.ratio_samples.to_csv(index=False).encode("utf-8"),
+                    file_name="ratio_samples.csv",
+                    mime="text/csv",
+                    key="ratio_samples_download"
+                )

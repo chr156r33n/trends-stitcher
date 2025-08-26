@@ -473,6 +473,70 @@ def robust_ratio(a: np.ndarray, b: np.ndarray) -> Tuple[float, float, int]:
     return (med, mad, int(r.size))
 
 
+def pairwise_ratio_samples(df_long: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return ALL observed ratios for each pair across all (batch_id, date).
+    One row per observation: term_i, term_j, ratio, batch_id, date
+    """
+    rows = []
+    for (bid, d), g in df_long.groupby(["batch_id", "date"], sort=False):
+        w = g.pivot_table(index="date", columns="term", values="value", aggfunc="mean")
+        if w.empty or w.shape[1] < 2:
+            continue
+        s = w.iloc[0].astype(float)
+        terms = list(s.index)
+        for i, j in itertools.combinations(range(len(terms)), 2):
+            ti, tj = terms[i], terms[j]
+            vi, vj = float(s.iloc[i]), float(s.iloc[j])
+            if vi > 0 and vj > 0 and np.isfinite(vi) and np.isfinite(vj):
+                rows.append({"term_i": ti, "term_j": tj, "ratio": vi / vj, "batch_id": bid, "date": d})
+                rows.append({"term_i": tj, "term_j": ti, "ratio": vj / vi, "batch_id": bid, "date": d})
+    return pd.DataFrame(rows)
+
+
+def instability_metrics(samples: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Summarise instability per pair and per term.
+    Pairwise metrics: median, MAD, IQR, min, max, count, CV on log-ratio.
+    Per-term score: average of pairwise CVs involving the term (lower=more stable).
+    """
+    if samples.empty:
+        return (pd.DataFrame(columns=[
+            "term_i", "term_j", "median", "mad", "iqr", "min", "max", "count", "cv_log"
+        ]),
+        pd.DataFrame(columns=["term", "instability_score", "pairs_count"]))
+
+    def _iqr(x): 
+        q = np.quantile(x, [0.25, 0.75])
+        return float(q[1] - q[0])
+
+    def _cv_log(x):
+        lx = np.log(x[(x > 0) & np.isfinite(x)])
+        if lx.size < 2:
+            return np.nan
+        return float(np.std(lx, ddof=1) / max(1e-12, abs(np.mean(lx))))
+
+    pair = (samples
+            .groupby(["term_i","term_j"], as_index=False)
+            .agg(median=("ratio","median"),
+                 mad=("ratio", lambda v: float(np.median(np.abs(v - np.median(v))) if len(v)>1 else 0.0)),
+                 iqr=("ratio", _iqr),
+                 min=("ratio","min"),
+                 max=("ratio","max"),
+                 count=("ratio","size"),
+                 cv_log=("ratio", _cv_log))
+            )
+
+    # per-term instability score = mean cv_log across pairs (ignore NaNs)
+    per_term = (pair
+                .groupby("term_i", as_index=False)
+                .agg(instability_score=("cv_log", lambda v: float(np.nanmean(v))),
+                     pairs_count=("cv_log","size"))
+                .rename(columns={"term_i":"term"}))
+
+    return pair, per_term
+
+
 def pairwise_ratios(df_long: pd.DataFrame) -> pd.DataFrame:
     """
     For each (batch_id, date), compute pairwise ratios between co-occurring terms.
@@ -601,14 +665,15 @@ def stitch_terms(
     verbose: bool = True,
     use_cache: bool = True,
     debug: bool = False,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Main pipeline:
       - batch fetch
       - compute pairwise ratios
       - solve consensus scaling
       - return wide timeseries (date x terms) on a comparable scale (global max=100),
-        pivot_scores, and per-term scale factors.
+        pivot_scores, per-term scale factors, pairwise metrics, term instability scores,
+        and ratio samples for diagnostics.
     """
     log = logger.info if verbose else logger.debug
     log("[stitch_terms] Starting with %d terms", len(terms))
@@ -713,5 +778,15 @@ def stitch_terms(
         df_long.assign(date=pd.to_datetime(df_long["date"]))
     , terms)
 
+    # Collect samples + metrics for diagnostics
+    samples = pairwise_ratio_samples(df_long)
+    pair_metrics, term_instability = instability_metrics(samples)
+
     log("[stitch_terms] Done")
-    return wide.reset_index().rename(columns={"index": "date"}), pivot_scores, scales
+    # Return two extra frames for diagnostics
+    return (wide.reset_index().rename(columns={"index": "date"}),
+            pivot_scores,
+            scales,
+            pair_metrics,
+            term_instability,
+            samples)

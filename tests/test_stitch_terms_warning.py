@@ -30,7 +30,7 @@ def test_stitch_terms_warns_on_empty_pairwise(monkeypatch):
 
     monkeypatch.setattr(TrendsFetcher, "fetch_batch", fake_fetch_batch)
 
-    _, _, scales = stitch_terms(
+    _, _, scales, _, _, _ = stitch_terms(
         "dummy", ["alpha", "beta"], verbose=False, use_cache=False
     )
 
