@@ -60,6 +60,7 @@ class TrendsFetcher:
         sleep_ms: int = 250,
         use_cache: bool = True,
         debug: bool = False,
+        collect_raw_responses: bool = False,
     ) -> None:
         self.key = serpapi_key
         self.geo = geo
@@ -68,6 +69,8 @@ class TrendsFetcher:
         self.sleep_ms = sleep_ms
         self.use_cache = use_cache
         self.debug = debug
+        self.collect_raw_responses = collect_raw_responses
+        self.raw_responses = []  # Store raw responses for download
 
     def _log_debug(self, *args, **kwargs) -> None:
         if not self.debug:
@@ -117,6 +120,18 @@ class TrendsFetcher:
                 
                 r.raise_for_status()
                 data = r.json()
+                
+                # Store raw response if collection is enabled
+                if self.collect_raw_responses:
+                    response_info = {
+                        "batch_terms": terms,
+                        "request_params": params,
+                        "response_data": data,
+                        "timestamp": time.time(),
+                        "cache_path": cache_path
+                    }
+                    self.raw_responses.append(response_info)
+                
                 err = data.get("error") or data.get("error_message")
                 if err:
                     raise RuntimeError(f"SerpAPI error: {err}")
@@ -676,7 +691,8 @@ def stitch_terms(
     verbose: bool = True,
     use_cache: bool = True,
     debug: bool = False,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    collect_raw_responses: bool = False,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame, List[Dict]]:
     """
     Main pipeline:
       - batch fetch
@@ -697,6 +713,7 @@ def stitch_terms(
         sleep_ms=sleep_ms,
         use_cache=use_cache,
         debug=debug,
+        collect_raw_responses=collect_raw_responses,
     )
     batches = make_batches(terms, group_size=group_size)
     log("[stitch_terms] Created %d batches", len(batches))
@@ -794,10 +811,11 @@ def stitch_terms(
     pair_metrics, term_instability = instability_metrics(samples)
 
     log("[stitch_terms] Done")
-    # Return two extra frames for diagnostics
+    # Return two extra frames for diagnostics plus raw responses
     return (wide.reset_index().rename(columns={"index": "date"}),
             pivot_scores,
             scales,
             pair_metrics,
             term_instability,
-            samples)
+            samples,
+            fetcher.raw_responses)

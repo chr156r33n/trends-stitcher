@@ -148,6 +148,8 @@ if 'term_instability' not in st.session_state:
     st.session_state.term_instability = None
 if 'ratio_samples' not in st.session_state:
     st.session_state.ratio_samples = None
+if 'raw_responses' not in st.session_state:
+    st.session_state.raw_responses = None
 
 # Initialize toggle states
 if 'show_debug' not in st.session_state:
@@ -162,6 +164,8 @@ if 'show_all_data' not in st.session_state:
     st.session_state.show_all_data = False
 if 'use_cache' not in st.session_state:
     st.session_state.use_cache = True
+if 'collect_raw_responses' not in st.session_state:
+    st.session_state.collect_raw_responses = True
 
 st.set_page_config(page_title="Google Trend Stitcher", layout="wide")
 st.title("Google Trend Stitcher")
@@ -277,6 +281,7 @@ with st.sidebar:
             st.session_state.pair_metrics = None
             st.session_state.term_instability = None
             st.session_state.ratio_samples = None
+            st.session_state.raw_responses = None
             
             # Reset toggle states
             st.session_state.show_debug = False
@@ -285,6 +290,7 @@ with st.sidebar:
             st.session_state.show_ribbons = False
             st.session_state.show_all_data = False
             st.session_state.use_cache = True
+            st.session_state.collect_raw_responses = True
             
             st.success("Cache cleared! Click 'Run' to reload data.")
             st.rerun()
@@ -342,6 +348,7 @@ with st.sidebar:
         verbose_logs = st.checkbox("Verbose logging", value=st.session_state.get('verbose_logs', False), key='verbose_logs_checkbox')
         show_stability = st.checkbox("Show stability diagnostics (overlap variance)", value=st.session_state.get('show_stability', False), key='show_stability_checkbox')
         show_ribbons = st.checkbox("Show fan-out (instability) bands", value=st.session_state.get('show_ribbons', False), key='show_ribbons_checkbox')
+        collect_raw_responses = st.checkbox("Collect raw API responses", value=st.session_state.get('collect_raw_responses', True), key='collect_raw_responses_checkbox')
         if show_ribbons:
             st.caption("💡 Shows uncertainty bands on the main chart based on pairwise ratio variability")
 
@@ -855,7 +862,7 @@ if run:
                     st.info(f"Date filters: {start_date} to {end_date}")
                     st.info(f"Note: API timeframe ({timeframe}) may limit available data regardless of date filters")
                 
-                df_scaled, pivot_scores, scales, pair_metrics, term_instability, ratio_samples = stitch_terms(
+                df_scaled, pivot_scores, scales, pair_metrics, term_instability, ratio_samples, raw_responses = stitch_terms(
                     serpapi_key=serpapi_key,
                     terms=terms,
                     geo=geo,
@@ -866,6 +873,7 @@ if run:
                     verbose=verbose_logs,
                     use_cache=use_cache,
                     debug=show_debug,
+                    collect_raw_responses=collect_raw_responses,
                 )
 
                 if show_debug:
@@ -996,6 +1004,7 @@ if run:
                 st.session_state.pair_metrics = pair_metrics
                 st.session_state.term_instability = term_instability
                 st.session_state.ratio_samples = ratio_samples
+                st.session_state.raw_responses = raw_responses
                 
                 # Show scaling analysis in debug mode
                 if show_debug:
@@ -1047,6 +1056,7 @@ if run:
         pair_metrics = st.session_state.pair_metrics
         term_instability = st.session_state.term_instability
         ratio_samples = st.session_state.ratio_samples
+        raw_responses = st.session_state.raw_responses
 
     # Apply filters to the data
     df_scaled = cached_filter_date_range(df_scaled, start_date, end_date)
@@ -1346,6 +1356,48 @@ if run:
 
 
     st.markdown("---")
+    with st.expander("Raw API Responses", expanded=False):
+        st.subheader("Raw API Response Data")
+        st.caption("Download the raw JSON responses from SerpAPI for offline validation and debugging.")
+        
+        if 'raw_responses' in st.session_state and st.session_state.raw_responses is not None and len(st.session_state.raw_responses) > 0:
+            # Show summary of responses
+            st.write(f"**API Calls Made:** {len(st.session_state.raw_responses)}")
+            
+            # Show details for each response
+            for i, response in enumerate(st.session_state.raw_responses):
+                with st.expander(f"Batch {i+1}: {', '.join(response['batch_terms'])}", expanded=False):
+                    st.write(f"**Terms:** {', '.join(response['batch_terms'])}")
+                    st.write(f"**Request Parameters:**")
+                    st.json(response['request_params'])
+                    st.write(f"**Response Structure:**")
+                    st.json({k: type(v).__name__ for k, v in response['response_data'].items()})
+            
+            # Download all responses as JSON
+            import json
+            all_responses_json = json.dumps(st.session_state.raw_responses, indent=2, default=str)
+            st.download_button(
+                "Download All Raw API Responses (JSON)",
+                all_responses_json.encode("utf-8"),
+                file_name="raw_api_responses.json",
+                mime="application/json",
+                key="raw_responses_download"
+            )
+            
+            # Download individual response files
+            st.write("**Download Individual Responses:**")
+            for i, response in enumerate(st.session_state.raw_responses):
+                response_json = json.dumps(response, indent=2, default=str)
+                st.download_button(
+                    f"Download Batch {i+1} Response",
+                    response_json.encode("utf-8"),
+                    file_name=f"batch_{i+1}_{'_'.join(response['batch_terms'])}.json",
+                    mime="application/json",
+                    key=f"batch_{i+1}_download"
+                )
+        else:
+            st.info("No raw API responses available. Run the analysis to collect response data.")
+    
     with st.expander("Detailed Analysis & Validation", expanded=False):
         st.subheader("Explainability")
         st.caption("This table shows how the scaling algorithm adjusted each term's maximum value to make all terms comparable. It helps verify that the data normalization worked correctly.")
