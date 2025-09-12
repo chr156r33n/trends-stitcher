@@ -55,6 +55,47 @@ def build_trends_payload(keywords, start_date=None, end_date=None,
 
     return payload
 
+def build_dfseo_payload(keywords, start_date=None, end_date=None, *,
+                        endpoint="explore",  # "explore" or "graph"
+                        location_name=None,  # e.g., "Worldwide" or "United Kingdom"
+                        language_name=None,  # e.g., "English"
+                        timeframe="today 5-y"):  # fallback when no explicit dates
+    """
+    Returns a payload compatible with the selected endpoint and strips unsupported fields.
+    IMPORTANT: Do NOT send 'location_code' to Trends endpoints – it will 40501.
+    """
+    kws = [k.strip() for k in keywords if k and str(k).strip()]
+    kws = list(dict.fromkeys(kws))[:5]
+    if not kws:
+        raise ValueError("No keywords provided")
+
+    base = {"api": "keywords_data", "se": "google_trends", "type": "trends", "keywords": kws}
+
+    # Allowed optional fields differ per endpoint. Keep it strict:
+    if endpoint == "explore":
+        allowed = {"type", "keywords", "time_range", "date_from", "date_to",
+                   "location_name", "language_name"}
+    elif endpoint == "graph":
+        allowed = {"type", "keywords", "time_range", "date_from", "date_to",
+                   "location_name", "language_name"}
+    else:
+        raise ValueError("endpoint must be 'explore' or 'graph'")
+
+    # Dates vs timeframe (never send both)
+    if start_date and end_date:
+        sd, ed = str(start_date), str(end_date)
+        if sd > ed: sd, ed = ed, sd
+        base["date_from"], base["date_to"] = sd, ed
+    else:
+        base["time_range"] = timeframe  # ensure enough history for YoY
+
+    # Optional human-readable fields (omit if None)
+    if location_name: base["location_name"] = location_name
+    if language_name: base["language_name"] = language_name
+
+    # Strip anything not explicitly allowed
+    return {k: v for k, v in base.items() if k in allowed}
+
 # -----------------------
 # Helpers / Caching
 # -----------------------
