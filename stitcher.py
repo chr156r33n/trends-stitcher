@@ -49,11 +49,18 @@ def _save_cache(path: str, data: Dict):
 # -----------------------
 
 class TrendsFetcher:
-    """Fetches Google Trends interest-over-time via SerpAPI."""
+    """Fetches Google Trends interest-over-time via a selectable provider.
+
+    Providers:
+      - serpapi (default)
+      - dataforseo
+      - brightdata
+    """
 
     def __init__(
         self,
         serpapi_key: str,
+        provider: str = "serpapi",
         geo: str = "",
         timeframe: str = "today 12-m",
         cache_dir: str = ".cache",
@@ -63,6 +70,7 @@ class TrendsFetcher:
         collect_raw_responses: bool = False,
     ) -> None:
         self.key = serpapi_key
+        self.provider = (provider or "serpapi").lower()
         self.geo = geo
         self.timeframe = timeframe
         self.cache_dir = cache_dir
@@ -91,26 +99,66 @@ class TrendsFetcher:
         q = ",".join(terms)  # comma-separated
         self._log_debug(f"Query string: {q}")
         
-        # Try with 'date' parameter first (SerpAPI standard)
+        # Shared request params (provider-specific wiring later)
         params = {
             "engine": "google_trends",
             "q": q,
-            "hl": "en",  # Add language parameter
-            "date": self.timeframe if self.timeframe else "all",  # Use selected timeframe or default to 'all'
-            "api_key": self.key,
+            "hl": "en",
+            "date": self.timeframe if self.timeframe else "all",
         }
         if self.geo:
             params["geo"] = self.geo
 
-        self._log_debug(f"Full request params: {params}")
+        # Build cache identity without storing secrets
+        cache_identity = dict(params)
+        cache_identity["provider"] = self.provider
+        cache_identity["key_fingerprint"] = hashlib.sha256((self.key or "").encode("utf-8")).hexdigest()[:8]
+
+        self._log_debug(f"Full request params (normalized): {cache_identity}")
         
-        cache_path = _mk_cache_path(self.cache_dir, params)
+        cache_path = _mk_cache_path(self.cache_dir, cache_identity)
         self._log_debug("Cache path", cache_path)
         data = _load_cache(cache_path) if self.use_cache else None
         if data is None:
             self._log_debug("Making API request...")
             try:
-                r = requests.get("https://serpapi.com/search", params=params, timeout=60)
+                if self.provider == "serpapi":
+                    serp_params = dict(params)
+                    serp_params["api_key"] = self.key
+                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
+                elif self.provider == "brightdata":
+                    headers = {"Authorization": f"Bearer {self.key}"}
+                    r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
+                elif self.provider == "dataforseo":
+                    import base64
+                    # Support raw "login:password" or already-prefixed Basic token
+                    if self.key.strip().lower().startswith("basic "):
+                        auth_header = self.key.strip()
+                    elif ":" in self.key:
+                        token = base64.b64encode(self.key.encode("utf-8")).decode("utf-8")
+                        auth_header = f"Basic {token}"
+                    else:
+                        # Assume provided value is base64 token
+                        auth_header = f"Basic {self.key}"
+
+                    dfs_headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": auth_header,
+                    }
+                    payload = [{
+                        "keywords": terms,
+                        "language_code": "en",
+                        **({"country_iso_code": self.geo} if self.geo else {}),
+                        "time_range": self._map_timeframe_to_dfs_range(self.timeframe),
+                    }]
+                    r = requests.post(
+                        "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
+                        headers=dfs_headers,
+                        data=json.dumps(payload),
+                        timeout=60,
+                    )
+                else:
+                    raise RuntimeError(f"Unsupported provider: {self.provider}")
                 status = r.status_code
                 body = getattr(r, "text", "") or ""
                 self._log_debug("HTTP status", status)
@@ -132,9 +180,18 @@ class TrendsFetcher:
                     }
                     self.raw_responses.append(response_info)
                 
-                err = data.get("error") or data.get("error_message")
-                if err:
-                    raise RuntimeError(f"SerpAPI error: {err}")
+                # Provider-specific error surfacing
+                if self.provider == "serpapi":
+                    err = data.get("error") or data.get("error_message")
+                    if err:
+                        raise RuntimeError(f"SerpAPI error: {err}")
+                elif self.provider == "brightdata":
+                    if isinstance(data, dict) and data.get("error"):
+                        raise RuntimeError(f"Bright Data error: {data.get('error')}")
+                elif self.provider == "dataforseo":
+                    if isinstance(data, dict) and data.get("status_code") and data.get("status_code") != 20000:
+                        msg = data.get("status_message") or data.get("status") or "Unknown error"
+                        raise RuntimeError(f"DataForSEO error: {msg}")
                     
                 # Log the response structure for debugging
                 self._log_debug(f"Response keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
@@ -147,7 +204,7 @@ class TrendsFetcher:
                         self._log_debug(f"First interest_over_time item: {io_data[0]}")
                 
                 # Check if SerpAPI overrode our parameters
-                if isinstance(data, dict) and 'search_parameters' in data:
+                if self.provider == "serpapi" and isinstance(data, dict) and 'search_parameters' in data:
                     search_params = data['search_parameters']
                     self._log_debug(f"SerpAPI search parameters: {search_params}")
                     if 'date' in search_params and search_params['date'] != self.timeframe:
@@ -182,7 +239,10 @@ class TrendsFetcher:
 
         # Try to parse the response
         try:
-            return self._parse_timeseries(data, terms)
+            normalized = data
+            if self.provider == "dataforseo":
+                normalized = self._normalize_dataforseo_payload(data)
+            return self._parse_timeseries(normalized, terms)
         except Exception as parse_error:
             self._log_debug(f"Initial parsing failed: {parse_error}")
             # If parsing failed, try alternative query formats
@@ -207,22 +267,33 @@ class TrendsFetcher:
                     "q": q_format,
                     "hl": "en",  # Add language parameter
                     "date": self.timeframe if self.timeframe else "all",  # Use selected timeframe or default to 'all'
-                    "api_key": self.key,
                 }
                 if self.geo:
                     params["geo"] = self.geo
                 
-                r = requests.get("https://serpapi.com/search", params=params, timeout=60)
+                if self.provider == "serpapi":
+                    serp_params = dict(params)
+                    serp_params["api_key"] = self.key
+                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
+                elif self.provider == "brightdata":
+                    headers = {"Authorization": f"Bearer {self.key}"}
+                    r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
+                else:
+                    break
                 r.raise_for_status()
                 data = r.json()
                 
-                err = data.get("error") or data.get("error_message")
-                if err:
-                    self._log_debug(f"Format {q_format} failed with error: {err}")
-                    continue
+                if self.provider == "serpapi":
+                    err = data.get("error") or data.get("error_message")
+                    if err:
+                        self._log_debug(f"Format {q_format} failed with error: {err}")
+                        continue
                 
                 # Try to parse this response
-                df = self._parse_timeseries(data, terms)
+                normalized = data
+                if self.provider == "dataforseo":
+                    normalized = self._normalize_dataforseo_payload(data)
+                df = self._parse_timeseries(normalized, terms)
                 if not df.empty:
                     self._log_debug(f"Success with query format: {q_format}")
                     return df
@@ -436,6 +507,48 @@ class TrendsFetcher:
         # last resort: today - only warn if debug is enabled
         logger.debug(f"Could not parse date {ts}, using today's date")
         return dt.date.today()
+
+    def _map_timeframe_to_dfs_range(self, timeframe: str) -> str:
+        t = (timeframe or "").strip().lower()
+        mapping = {
+            "today 1-m": "past_30_days",
+            "today 3-m": "past_90_days",
+            "today 12-m": "past_12_months",
+            "today 5-y": "past_5_years",
+            "today 10-y": "past_10_years",
+            "today 15-y": "past_15_years",
+            "today 20-y": "past_20_years",
+            "all": "all",
+        }
+        return mapping.get(t, "all")
+
+    def _normalize_dataforseo_payload(self, payload: Dict) -> Dict:
+        """
+        Normalize DataForSEO explore/live response to a structure with interest_over_time
+        and/or timeline_data so that _parse_timeseries can consume it.
+        """
+        if not isinstance(payload, dict):
+            return payload
+        tasks = payload.get("tasks")
+        if isinstance(tasks, list) and tasks:
+            task0 = tasks[0] or {}
+            result = task0.get("result")
+            if isinstance(result, list) and result:
+                core = result[0] or {}
+                if isinstance(core, dict):
+                    if "interest_over_time" in core or "timeline_data" in core:
+                        return core
+                    iot = core.get("interest_over_time")
+                    if isinstance(iot, dict) and ("timeline_data" in iot or isinstance(iot, list)):
+                        return {"interest_over_time": iot}
+                    # Data may store series as 'timeline' or similar
+                    for k, v in core.items():
+                        if isinstance(v, list) and v and isinstance(v[0], dict) and any(
+                            kk in v[0] for kk in ["time", "timestamp", "date", "formattedTime", "formatted_time"]
+                        ):
+                            return {"timeline_data": v}
+                return core
+        return payload
 
 
 # -----------------------
@@ -683,6 +796,7 @@ def score_pivots(df_long: pd.DataFrame, terms: List[str]) -> pd.DataFrame:
 def stitch_terms(
     serpapi_key: str,
     terms: List[str],
+    provider: str = "serpapi",
     geo: str = "",
     timeframe: str = "today 12-m",
     group_size: int = 5,
@@ -707,6 +821,7 @@ def stitch_terms(
 
     fetcher = TrendsFetcher(
         serpapi_key,
+        provider=provider,
         geo=geo,
         timeframe=timeframe,
         cache_dir=cache_dir,
