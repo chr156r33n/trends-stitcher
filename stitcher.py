@@ -22,13 +22,11 @@ def build_dfseo_trends_payload(
     endpoint="graph",          # "graph" or "explore"
     start_date=None,
     end_date=None,
-    time_range="today 5-y",    # default when no dates given
-    location_name=None,        # e.g. "Worldwide" or "United Kingdom"
-    language_name=None         # e.g. "English"
+    time_range="today 5-y"     # default when no dates given
 ):
     """
     Returns a payload valid for DataForSEO Google Trends endpoints.
-    IMPORTANT: Do NOT include 'location_code' or 'language_code'.
+    IMPORTANT: Do NOT include ANY location or language fields - they cause 40501 errors.
     """
     # sanitize keywords
     kws = [str(k).strip() for k in keywords if str(k).strip()]
@@ -47,11 +45,6 @@ def build_dfseo_trends_payload(
         base["date_from"], base["date_to"] = sd, ed
     else:
         base["time_range"] = time_range  # ensures enough history for YoY
-
-    if location_name:
-        base["location_name"] = location_name
-    if language_name:
-        base["language_name"] = language_name
 
     return base
 
@@ -209,9 +202,7 @@ class TrendsFetcher:
                             keywords=terms,
                             start_date=start_date,
                             end_date=end_date,
-                            endpoint="explore",
-                            location_name="Worldwide" if not self.geo else None,
-                            language_name="English",
+                            endpoint="graph",  # Use graph endpoint for time-series
                             time_range="today 5-y"  # Ensure YoY coverage
                         )
                         
@@ -230,13 +221,11 @@ class TrendsFetcher:
                         payload = [{
                             "type": "trends",
                             "keywords": terms,
-                            "time_range": "today 5-y",
-                            "location_name": "Worldwide",
-                            "language_name": "English"
+                            "time_range": "today 5-y"
                         }]
                     
                     r = requests.post(
-                        "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
+                        "https://api.dataforseo.com/v3/keywords_data/google_trends/graph/live",
                         headers=dfs_headers,
                         data=json.dumps(payload),
                         timeout=60,
