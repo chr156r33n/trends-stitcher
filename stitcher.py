@@ -202,7 +202,7 @@ class TrendsFetcher:
                             keywords=terms,
                             start_date=start_date,
                             end_date=end_date,
-                            endpoint="graph",  # Use graph endpoint for time-series
+                            endpoint="explore",  # Use explore endpoint for time-series
                             time_range="today 5-y"  # Ensure YoY coverage
                         )
                         
@@ -225,7 +225,7 @@ class TrendsFetcher:
                         }]
                     
                     r = requests.post(
-                        "https://api.dataforseo.com/v3/keywords_data/google_trends/graph/live",
+                        "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
                         headers=dfs_headers,
                         data=json.dumps(payload),
                         timeout=60,
