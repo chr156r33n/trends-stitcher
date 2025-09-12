@@ -411,7 +411,7 @@ class TrendsFetcher:
                 elif self.provider == "brightdata":
                     headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
                     payload = {
-                        "zone": "YOUR_SERP_API_ZONE",  # This should be configurable
+                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",  # Use configurable zone
                         "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
                         "format": "raw"
                     }
