@@ -241,8 +241,11 @@ class TrendsFetcher:
         # Try to parse the response
         try:
             normalized = data
+            self._log_debug(f"Provider: {self.provider}")
             if self.provider == "dataforseo":
+                self._log_debug("Calling _normalize_dataforseo_payload")
                 normalized = self._normalize_dataforseo_payload(data)
+                self._log_debug(f"Normalized data keys: {list(normalized.keys()) if isinstance(normalized, dict) else 'Not a dict'}")
             return self._parse_timeseries(normalized, terms)
         except Exception as parse_error:
             self._log_debug(f"Initial parsing failed: {parse_error}")
@@ -549,8 +552,17 @@ class TrendsFetcher:
                         for point in data:
                             if isinstance(point, dict):
                                 # Convert DataForSEO format to expected format
-                                # DataForSEO returns a single value per point, we need to create an array
-                                value = point.get("value", 0)
+                                # Log all available keys in the data point for debugging
+                                self._log_debug(f"Data point keys: {list(point.keys())}")
+                                
+                                # Try different possible field names for the value
+                                value = (point.get("value") or 
+                                        point.get("values") or 
+                                        point.get("interest_value") or 
+                                        point.get("interest") or 
+                                        point.get("score") or 
+                                        0)
+                                self._log_debug(f"Found value: {value}")
                                 if not isinstance(value, list):
                                     value = [value]  # Convert single value to array
                                 
