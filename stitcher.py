@@ -16,85 +16,44 @@ import logging
 logger = logging.getLogger(__name__)
 logger.propagate = True
 
-def build_trends_payload(keywords, start_date=None, end_date=None,
-                         location_code=0, language_code="en",
-                         default_timeframe="today 5-y"):
+def build_dfseo_trends_payload(
+    keywords,
+    *,
+    endpoint="graph",          # "graph" or "explore"
+    start_date=None,
+    end_date=None,
+    time_range="today 5-y",    # default when no dates given
+    location_name=None,        # e.g. "Worldwide" or "United Kingdom"
+    language_name=None         # e.g. "English"
+):
     """
-    Returns a dict for DataForSEO Trends (google_trends_graph).
-    - Absolute dates: YYYY-MM-DD only (no times, no tz).
-    - Else timeframe: 'today 5-y' for YoY coverage.
-    - location_code: 0 = worldwide (works); use real code if user selects a country.
+    Returns a payload valid for DataForSEO Google Trends endpoints.
+    IMPORTANT: Do NOT include 'location_code' or 'language_code'.
     """
-    # Clean keywords (dedupe, trim, limit 5)
-    kws = [k.strip() for k in keywords if k and str(k).strip()]
+    # sanitize keywords
+    kws = [str(k).strip() for k in keywords if str(k).strip()]
     kws = list(dict.fromkeys(kws))[:5]
     if not kws:
         raise ValueError("No keywords provided")
 
-    payload = {
+    base = {
         "type": "trends",
-        "location_code": int(location_code),
-        "language_code": language_code,
         "keywords": kws,
     }
 
-    if start_date and end_date:
-        # Sanitize to YYYY-MM-DD
-        sd = str(start_date)
-        ed = str(end_date)
-        # Safety: enforce ordering
-        if sd > ed:
-            sd, ed = ed, sd
-        # Safety: expand by 7 days to ensure full week buckets are included
-        # (helps avoid edge-week drop-outs for weekly cadence)
-        payload["date_from"] = sd
-        payload["date_to"]   = ed
-    else:
-        # No explicit dates: ask for enough history for YoY
-        payload["time_range"] = default_timeframe  # e.g., 'today 5-y'
-
-    return payload
-
-def build_dfseo_payload(keywords, start_date=None, end_date=None, *,
-                        endpoint="explore",  # "explore" or "graph"
-                        location_name=None,  # e.g., "Worldwide" or "United Kingdom"
-                        language_name=None,  # e.g., "English"
-                        timeframe="today 5-y"):  # fallback when no explicit dates
-    """
-    Returns a payload compatible with the selected endpoint and strips unsupported fields.
-    IMPORTANT: Do NOT send 'location_code' to Trends endpoints – it will 40501.
-    """
-    kws = [k.strip() for k in keywords if k and str(k).strip()]
-    kws = list(dict.fromkeys(kws))[:5]
-    if not kws:
-        raise ValueError("No keywords provided")
-
-    base = {"api": "keywords_data", "se": "google_trends", "type": "trends", "keywords": kws}
-
-    # Allowed optional fields differ per endpoint. Keep it strict:
-    if endpoint == "explore":
-        allowed = {"api", "se", "type", "keywords", "time_range", "date_from", "date_to",
-                   "location_name", "language_name"}
-    elif endpoint == "graph":
-        allowed = {"api", "se", "type", "keywords", "time_range", "date_from", "date_to",
-                   "location_name", "language_name"}
-    else:
-        raise ValueError("endpoint must be 'explore' or 'graph'")
-
-    # Dates vs timeframe (never send both)
     if start_date and end_date:
         sd, ed = str(start_date), str(end_date)
         if sd > ed: sd, ed = ed, sd
         base["date_from"], base["date_to"] = sd, ed
     else:
-        base["time_range"] = timeframe  # ensure enough history for YoY
+        base["time_range"] = time_range  # ensures enough history for YoY
 
-    # Optional human-readable fields (omit if None)
-    if location_name: base["location_name"] = location_name
-    if language_name: base["language_name"] = language_name
+    if location_name:
+        base["location_name"] = location_name
+    if language_name:
+        base["language_name"] = language_name
 
-    # Strip anything not explicitly allowed
-    return {k: v for k, v in base.items() if k in allowed}
+    return base
 
 # -----------------------
 # Helpers / Caching
@@ -246,14 +205,14 @@ class TrendsFetcher:
                             # For now, use default timeframe for safety
                             pass
                         
-                        payload_dict = build_dfseo_payload(
+                        payload_dict = build_dfseo_trends_payload(
                             keywords=terms,
                             start_date=start_date,
                             end_date=end_date,
                             endpoint="explore",
                             location_name="Worldwide" if not self.geo else None,
                             language_name="English",
-                            timeframe="today 5-y"  # Ensure YoY coverage
+                            time_range="today 5-y"  # Ensure YoY coverage
                         )
                         
                         # Note: No need to add country_iso_code - it's not supported by explore endpoint
@@ -269,8 +228,6 @@ class TrendsFetcher:
                         print(f"DEBUG: Payload builder error: {e}")
                         # Fallback to simple payload with supported fields only
                         payload = [{
-                            "api": "keywords_data",
-                            "se": "google_trends",
                             "type": "trends",
                             "keywords": terms,
                             "time_range": "today 5-y",
