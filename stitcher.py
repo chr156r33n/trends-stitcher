@@ -531,12 +531,18 @@ class TrendsFetcher:
         if not isinstance(payload, dict):
             return payload
         
+        # Debug logging
+        self._log_debug(f"DataForSEO payload keys: {list(payload.keys())}")
+        
         # Handle the new DataForSEO response format with 'items' array
         if "items" in payload and isinstance(payload["items"], list) and payload["items"]:
+            self._log_debug(f"Found items array with {len(payload['items'])} items")
             items = payload["items"]
-            for item in items:
+            for i, item in enumerate(items):
+                self._log_debug(f"Item {i}: {list(item.keys()) if isinstance(item, dict) else type(item)}")
                 if isinstance(item, dict) and "data" in item:
                     data = item["data"]
+                    self._log_debug(f"Found data array with {len(data) if isinstance(data, list) else 'not a list'} items")
                     if isinstance(data, list) and data:
                         # Convert DataForSEO format to timeline_data format
                         timeline_data = []
@@ -554,6 +560,7 @@ class TrendsFetcher:
                                     "value": value
                                 }
                                 timeline_data.append(timeline_point)
+                        self._log_debug(f"Created timeline_data with {len(timeline_data)} points")
                         return {"timeline_data": timeline_data}
         
         # Handle the old DataForSEO response format with 'tasks' array
