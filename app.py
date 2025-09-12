@@ -523,18 +523,24 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
             target_date = row["prev_year_date"]
             current_date = row["date"]
             
-            # Find all dates within tolerance of the target date
-            date_diffs = abs((g["date"] - target_date).dt.days)
-            within_tolerance = date_diffs <= tolerance_days
-            
-            if within_tolerance.any():
-                # Get the closest match
-                closest_idx = date_diffs[within_tolerance].idxmin()
-                prior_value = g.loc[closest_idx, "value"]
-                logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> {g.loc[closest_idx, 'date']} = {prior_value}")
+            # Find all PREVIOUS YEAR dates within tolerance of the target date
+            # We need to look for dates that are in the previous year
+            prev_year_data = g[g["date"].dt.year == target_date.year]
+            if not prev_year_data.empty:
+                date_diffs = abs((prev_year_data["date"] - target_date).dt.days)
+                within_tolerance = date_diffs <= tolerance_days
+                
+                if within_tolerance.any():
+                    # Get the closest match from previous year data
+                    closest_idx = date_diffs[within_tolerance].idxmin()
+                    prior_value = prev_year_data.loc[closest_idx, "value"]
+                    logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> {prev_year_data.loc[closest_idx, 'date']} = {prior_value}")
+                else:
+                    prior_value = np.nan
+                    logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No match in previous year")
             else:
                 prior_value = np.nan
-                logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No match")
+                logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No previous year data")
             
             prior_values.append(prior_value)
         
