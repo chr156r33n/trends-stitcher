@@ -93,6 +93,7 @@ class TrendsFetcher:
     def fetch_batch(self, terms: List[str]) -> pd.DataFrame:
         if len(terms) > 5:
             raise ValueError("Max 5 terms per Trends batch.")
+        print(f"DEBUG: Fetching batch: {terms}, Provider: {self.provider}")
         self._log_debug(f"Fetching batch: {terms}")
         self._log_debug(f"Provider: {self.provider}")
         
@@ -131,6 +132,7 @@ class TrendsFetcher:
                     headers = {"Authorization": f"Bearer {self.key}"}
                     r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
                 elif self.provider == "dataforseo":
+                    print("DEBUG: Making DataForSEO API call")
                     self._log_debug("Making DataForSEO API call")
                     import base64
                     # Support raw "login:password" or already-prefixed Basic token
@@ -243,10 +245,13 @@ class TrendsFetcher:
         # Try to parse the response
         try:
             normalized = data
+            print(f"DEBUG: Provider: {self.provider}")
             self._log_debug(f"Provider: {self.provider}")
             if self.provider == "dataforseo":
+                print("DEBUG: Calling _normalize_dataforseo_payload")
                 self._log_debug("Calling _normalize_dataforseo_payload")
                 normalized = self._normalize_dataforseo_payload(data)
+                print(f"DEBUG: Normalized data keys: {list(normalized.keys()) if isinstance(normalized, dict) else 'Not a dict'}")
                 self._log_debug(f"Normalized data keys: {list(normalized.keys()) if isinstance(normalized, dict) else 'Not a dict'}")
             return self._parse_timeseries(normalized, terms)
         except Exception as parse_error:
