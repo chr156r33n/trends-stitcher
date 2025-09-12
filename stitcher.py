@@ -260,12 +260,15 @@ class TrendsFetcher:
                         
                     except Exception as e:
                         print(f"DEBUG: Payload builder error: {e}")
-                        # Fallback to simple payload
+                        # Fallback to simple payload with supported fields only
                         payload = [{
+                            "api": "keywords_data",
+                            "se": "google_trends",
+                            "type": "trends",
                             "keywords": terms,
-                            "language_code": "en",
                             "time_range": "today 5-y",
-                            **({"country_iso_code": self.geo} if self.geo else {}),
+                            "location_name": "Worldwide",
+                            "language_name": "English"
                         }]
                     
                     r = requests.post(
