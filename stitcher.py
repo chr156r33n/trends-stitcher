@@ -316,6 +316,35 @@ class TrendsFetcher:
         raise RuntimeError("All query formats failed")
 
     @staticmethod
+    def _parse_dataforseo_trends(payload: dict) -> List[Dict]:
+        """
+        Parse DataForSEO trends response format.
+        DataForSEO returns data under items[0].data[*].values, aligned with items[0].keywords.
+        """
+        rows = []
+        try:
+            for item in payload.get("items", []):
+                if item.get("type") != "google_trends_graph":
+                    continue
+                kws = item.get("keywords") or []
+                for dp in item.get("data", []):
+                    date_str = dp.get("date_from") or dp.get("date")
+                    ts = dp.get("timestamp")
+                    date_val = None
+                    if date_str:
+                        date_val = pd.to_datetime(date_str).date()
+                    elif ts:
+                        date_val = pd.to_datetime(int(ts), unit="s").date()
+                    values = dp.get("values")
+                    if isinstance(values, list) and len(values) == len(kws):
+                        for term, v in zip(kws, values):
+                            rows.append({"date": date_val, "term": term, "value": float(v)})
+            return rows
+        except Exception as e:
+            print(f"DEBUG: DataForSEO parser error: {e}")
+            return []
+
+    @staticmethod
     def _parse_timeseries(payload: Dict, terms: List[str]) -> pd.DataFrame:
         """
         Parse SerpAPI payload into long form [date, term, value].
@@ -354,6 +383,13 @@ class TrendsFetcher:
                                 break
 
         if not timeline:
+            # Try DataForSEO parser as fallback
+            print("DEBUG: Trying DataForSEO parser as fallback")
+            dataforseo_rows = TrendsFetcher._parse_dataforseo_trends(payload)
+            if dataforseo_rows:
+                print(f"DEBUG: DataForSEO parser found {len(dataforseo_rows)} rows")
+                return pd.DataFrame(dataforseo_rows)
+            
             keys = list(payload.keys()) if isinstance(payload, dict) else []
             logger.error(f"No timeline_data found. Available keys: {keys}")
             logger.error(f"Payload sample: {str(payload)[:500]}")
