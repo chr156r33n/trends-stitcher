@@ -530,6 +530,33 @@ class TrendsFetcher:
         """
         if not isinstance(payload, dict):
             return payload
+        
+        # Handle the new DataForSEO response format with 'items' array
+        if "items" in payload and isinstance(payload["items"], list) and payload["items"]:
+            items = payload["items"]
+            for item in items:
+                if isinstance(item, dict) and "data" in item:
+                    data = item["data"]
+                    if isinstance(data, list) and data:
+                        # Convert DataForSEO format to timeline_data format
+                        timeline_data = []
+                        for point in data:
+                            if isinstance(point, dict):
+                                # Convert DataForSEO format to expected format
+                                # DataForSEO returns a single value per point, we need to create an array
+                                value = point.get("value", 0)
+                                if not isinstance(value, list):
+                                    value = [value]  # Convert single value to array
+                                
+                                timeline_point = {
+                                    "time": point.get("date_from", ""),
+                                    "timestamp": point.get("timestamp", 0),
+                                    "value": value
+                                }
+                                timeline_data.append(timeline_point)
+                        return {"timeline_data": timeline_data}
+        
+        # Handle the old DataForSEO response format with 'tasks' array
         tasks = payload.get("tasks")
         if isinstance(tasks, list) and tasks:
             task0 = tasks[0] or {}
