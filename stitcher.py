@@ -25,7 +25,7 @@ def build_dfseo_trends_payload(
 ):
     """
     Returns a payload valid for DataForSEO Google Trends API.
-    IMPORTANT: Google Trends API does NOT support time_range - only date_from/date_to.
+    IMPORTANT: Google Trends API does NOT support time_range or type field - only keywords and dates.
     """
     # sanitize keywords
     kws = [str(k).strip() for k in keywords if str(k).strip()]
@@ -34,7 +34,6 @@ def build_dfseo_trends_payload(
         raise ValueError("No keywords provided")
 
     base = {
-        "type": "trends",
         "keywords": kws,
     }
 
@@ -226,7 +225,6 @@ class TrendsFetcher:
                         end_date = date.today()
                         start_date = end_date - timedelta(days=730)  # ~2 years for YoY
                         payload = [{
-                            "type": "trends",
                             "keywords": terms,
                             "date_from": start_date.strftime("%Y-%m-%d"),
                             "date_to": end_date.strftime("%Y-%m-%d")
