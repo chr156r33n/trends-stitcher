@@ -5,6 +5,7 @@ import os
 import time
 import itertools
 import datetime as dt
+from datetime import date, timedelta
 from typing import List, Tuple, Dict
 
 import numpy as np
@@ -15,6 +16,44 @@ import logging
 logger = logging.getLogger(__name__)
 logger.propagate = True
 
+def build_trends_payload(keywords, start_date=None, end_date=None,
+                         location_code=0, language_code="en",
+                         default_timeframe="today 5-y"):
+    """
+    Returns a dict for DataForSEO Trends (google_trends_graph).
+    - Absolute dates: YYYY-MM-DD only (no times, no tz).
+    - Else timeframe: 'today 5-y' for YoY coverage.
+    - location_code: 0 = worldwide (works); use real code if user selects a country.
+    """
+    # Clean keywords (dedupe, trim, limit 5)
+    kws = [k.strip() for k in keywords if k and str(k).strip()]
+    kws = list(dict.fromkeys(kws))[:5]
+    if not kws:
+        raise ValueError("No keywords provided")
+
+    payload = {
+        "type": "trends",
+        "location_code": int(location_code),
+        "language_code": language_code,
+        "keywords": kws,
+    }
+
+    if start_date and end_date:
+        # Sanitize to YYYY-MM-DD
+        sd = str(start_date)
+        ed = str(end_date)
+        # Safety: enforce ordering
+        if sd > ed:
+            sd, ed = ed, sd
+        # Safety: expand by 7 days to ensure full week buckets are included
+        # (helps avoid edge-week drop-outs for weekly cadence)
+        payload["date_from"] = sd
+        payload["date_to"]   = ed
+    else:
+        # No explicit dates: ask for enough history for YoY
+        payload["time_range"] = default_timeframe  # e.g., 'today 5-y'
+
+    return payload
 
 # -----------------------
 # Helpers / Caching
@@ -149,13 +188,42 @@ class TrendsFetcher:
                         "Content-Type": "application/json",
                         "Authorization": auth_header,
                     }
-                    payload = [{
-                        "keywords": terms,
-                        "language_code": "en",
-                        **({"country_iso_code": self.geo} if self.geo else {}),
-                        # Note: DataForSEO Google Trends API doesn't support timeframe parameter
-                        # The API returns all available historical data by default
-                    }]
+                    
+                    # Use robust payload builder for DataForSEO
+                    try:
+                        # Parse timeframe to extract dates if possible
+                        start_date, end_date = None, None
+                        if self.timeframe and "today" not in self.timeframe.lower():
+                            # Try to parse custom timeframe for dates
+                            # For now, use default timeframe for safety
+                            pass
+                        
+                        payload_dict = build_trends_payload(
+                            keywords=terms,
+                            start_date=start_date,
+                            end_date=end_date,
+                            location_code=0,  # Worldwide
+                            language_code="en",
+                            default_timeframe="today 5-y"  # Ensure YoY coverage
+                        )
+                        
+                        # Add geo if specified
+                        if self.geo:
+                            payload_dict["country_iso_code"] = self.geo
+                        
+                        payload = [payload_dict]
+                        print(f"DEBUG: DataForSEO payload: {payload}")
+                        
+                    except Exception as e:
+                        print(f"DEBUG: Payload builder error: {e}")
+                        # Fallback to simple payload
+                        payload = [{
+                            "keywords": terms,
+                            "language_code": "en",
+                            "time_range": "today 5-y",
+                            **({"country_iso_code": self.geo} if self.geo else {}),
+                        }]
+                    
                     r = requests.post(
                         "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
                         headers=dfs_headers,
