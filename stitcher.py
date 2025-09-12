@@ -149,7 +149,7 @@ class TrendsFetcher:
                         "keywords": terms,
                         "language_code": "en",
                         **({"country_iso_code": self.geo} if self.geo else {}),
-                        "time_range": self._map_timeframe_to_dfs_range(self.timeframe),
+                        "timeframe": (self.timeframe if self.timeframe else "all"),
                     }]
                     r = requests.post(
                         "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
