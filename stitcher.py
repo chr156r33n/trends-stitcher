@@ -94,6 +94,7 @@ class TrendsFetcher:
         if len(terms) > 5:
             raise ValueError("Max 5 terms per Trends batch.")
         self._log_debug(f"Fetching batch: {terms}")
+        self._log_debug(f"Provider: {self.provider}")
         
         # Try different query formats - SerpAPI might prefer different separators
         q = ",".join(terms)  # comma-separated
@@ -130,6 +131,7 @@ class TrendsFetcher:
                     headers = {"Authorization": f"Bearer {self.key}"}
                     r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
                 elif self.provider == "dataforseo":
+                    self._log_debug("Making DataForSEO API call")
                     import base64
                     # Support raw "login:password" or already-prefixed Basic token
                     if self.key.strip().lower().startswith("basic "):
