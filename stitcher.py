@@ -209,8 +209,13 @@ class TrendsFetcher:
                     serp_params["api_key"] = self.key
                     r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
                 elif self.provider == "brightdata":
-                    headers = {"Authorization": f"Bearer {self.key}"}
-                    r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
+                    headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
+                    payload = {
+                        "zone": "YOUR_SERP_API_ZONE",  # This should be configurable
+                        "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
+                        "format": "raw"
+                    }
+                    r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=60)
                 elif self.provider == "dataforseo":
                     print("DEBUG: Making DataForSEO API call")
                     self._log_debug("Making DataForSEO API call")
@@ -402,8 +407,13 @@ class TrendsFetcher:
                     serp_params["api_key"] = self.key
                     r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
                 elif self.provider == "brightdata":
-                    headers = {"Authorization": f"Bearer {self.key}"}
-                    r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
+                    headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
+                    payload = {
+                        "zone": "YOUR_SERP_API_ZONE",  # This should be configurable
+                        "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
+                        "format": "raw"
+                    }
+                    r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=60)
                 else:
                     break
                 r.raise_for_status()
