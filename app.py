@@ -437,10 +437,21 @@ def cached_melt_long(df_scaled: pd.DataFrame) -> pd.DataFrame:
     """Cached version of melt operation"""
     return melt_long(df_scaled)
 
+def infer_cadence(dates):
+    """Detect data cadence from date series"""
+    s = pd.to_datetime(dates).sort_values().drop_duplicates()
+    if len(s) < 3:
+        return "unknown"
+    med_gap = s.diff().dropna().dt.days.median()
+    if med_gap <= 2: return "daily"
+    if 3 <= med_gap <= 10: return "weekly"
+    if 25 <= med_gap <= 35: return "monthly"
+    return "unknown"
+
 def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     """
     Calculate year-over-year comparison for a given term.
-    Uses tolerance-based matching to handle different data cadences (daily/weekly/monthly).
+    Uses 364-day lag with nearest merge for weekly data, tolerance-based matching for others.
     """
     # Filter data for the specific term and sort by date
     g = long_df[long_df["term"] == term].sort_values("date").copy()
@@ -458,68 +469,90 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     logger.debug(f"Data range: {g['date'].min()} to {g['date'].max()}")
     logger.debug(f"Total data points: {len(g)}")
     
-    # Determine data cadence and set appropriate tolerance
-    date_diffs = g["date"].diff().dropna()
-    if len(date_diffs) > 0:
-        median_diff = date_diffs.median()
-        if median_diff.days <= 1:
-            # Daily data - use 3 day tolerance
-            tolerance_days = 3
-        elif median_diff.days <= 7:
-            # Weekly data - use 7 day tolerance  
-            tolerance_days = 7
-        else:
-            # Monthly or other - use 15 day tolerance
-            tolerance_days = 15
+    # Detect data cadence
+    cadence = infer_cadence(g["date"])
+    logger.debug(f"Detected data cadence: {cadence}")
+    
+    if cadence == "weekly":
+        # Use 364-day lag with nearest merge for weekly data
+        logger.debug("Using 364-day lag approach for weekly data")
+        
+        # Create prior year data by shifting forward 364 days (52 weeks)
+        prior_data = g.copy()
+        prior_data["date"] = prior_data["date"] + pd.Timedelta(days=364)
+        prior_data = prior_data.rename(columns={"value": "prior_value"})
+        prior_data = prior_data[["date", "prior_value"]]
+        
+        # Merge using merge_asof with tolerance
+        g = g.sort_values("date")
+        prior_data = prior_data.sort_values("date")
+        
+        result = pd.merge_asof(
+            g, 
+            prior_data, 
+            on="date", 
+            direction="nearest", 
+            tolerance=pd.Timedelta(days=4)
+        )
+        
+        logger.debug(f"364-day lag merge: {len(result)} rows, {result['prior_value'].notna().sum()} matches")
+        
     else:
-        tolerance_days = 7  # Default to weekly tolerance
-    
-    logger.debug(f"Detected data cadence: ~{median_diff.days} days, using {tolerance_days} day tolerance")
-    
-    # Create a more robust previous year lookup with tolerance
-    g["prev_year_date"] = g["date"].apply(lambda x: x.replace(year=x.year - 1))
-    
-    # For each row, find the closest previous year value within tolerance
-    prior_values = []
-    for _, row in g.iterrows():
-        target_date = row["prev_year_date"]
-        current_date = row["date"]
-        
-        # Find all dates within tolerance of the target date
-        date_diffs = abs((g["date"] - target_date).dt.days)
-        within_tolerance = date_diffs <= tolerance_days
-        
-        if within_tolerance.any():
-            # Get the closest match
-            closest_idx = date_diffs[within_tolerance].idxmin()
-            prior_value = g.loc[closest_idx, "value"]
-            logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> {g.loc[closest_idx, 'date']} = {prior_value}")
+        # Use tolerance-based matching for daily/monthly data
+        if cadence == "daily":
+            tolerance_days = 3
+        elif cadence == "monthly":
+            tolerance_days = 15
         else:
-            prior_value = np.nan
-            logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No match")
+            tolerance_days = 7  # Default
         
-        prior_values.append(prior_value)
-    
-    g["prior_value"] = prior_values
+        logger.debug(f"Using tolerance-based matching with {tolerance_days} day tolerance")
+        
+        # Create a more robust previous year lookup with tolerance
+        g["prev_year_date"] = g["date"].apply(lambda x: x.replace(year=x.year - 1))
+        
+        # For each row, find the closest previous year value within tolerance
+        prior_values = []
+        for _, row in g.iterrows():
+            target_date = row["prev_year_date"]
+            current_date = row["date"]
+            
+            # Find all dates within tolerance of the target date
+            date_diffs = abs((g["date"] - target_date).dt.days)
+            within_tolerance = date_diffs <= tolerance_days
+            
+            if within_tolerance.any():
+                # Get the closest match
+                closest_idx = date_diffs[within_tolerance].idxmin()
+                prior_value = g.loc[closest_idx, "value"]
+                logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> {g.loc[closest_idx, 'date']} = {prior_value}")
+            else:
+                prior_value = np.nan
+                logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No match")
+            
+            prior_values.append(prior_value)
+        
+        result = g.copy()
+        result["prior_value"] = prior_values
     
     # Calculate differences
-    g["abs_diff"] = g["value"] - g["prior_value"]
-    g["pct_diff"] = np.where(
-        g["prior_value"] > 0,
-        (g["abs_diff"] / g["prior_value"]) * 100.0,
+    result["abs_diff"] = result["value"] - result["prior_value"]
+    result["pct_diff"] = np.where(
+        result["prior_value"] > 0,
+        (result["abs_diff"] / result["prior_value"]) * 100.0,
         np.nan
     )
     
     # Debug: Show summary statistics
-    valid_prev_year = g["prior_value"].notna().sum()
-    logger.debug(f"Valid previous year matches: {valid_prev_year} out of {len(g)}")
+    valid_prev_year = result["prior_value"].notna().sum()
+    logger.debug(f"Valid previous year matches: {valid_prev_year} out of {len(result)}")
     
     # Return the result with proper column names
-    result = g[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
+    final_result = result[["date", "value", "prior_value", "abs_diff", "pct_diff"]].rename(
         columns={"value": "current", "prior_value": "previous_year"}
     )
     
-    return result
+    return final_result
 
 def line_chart_multi(long_df: pd.DataFrame, selected_terms: list, title: str):
     data = long_df[long_df["term"].isin(selected_terms)]
