@@ -207,10 +207,10 @@ def get_suggested_timeframe(start_date, end_date):
     else:
         return "all"  # Use 'all' for very long ranges
 
-def get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache):
+def get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache, provider):
     """Get current parameters as a hashable tuple for comparison"""
     terms = tuple(sorted([t.strip() for t in terms_text.splitlines() if t.strip()]))
-    return (serpapi_key, terms, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache)
+    return (provider, serpapi_key, terms, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache)
 
 def should_reload_data(current_params):
     """Check if we need to reload data based on parameter changes"""
@@ -223,7 +223,14 @@ def should_reload_data(current_params):
 # Sidebar
 with st.sidebar:
     st.subheader("Data")
-    serpapi_key = st.text_input("SerpAPI API Key", type="password", value="")
+    provider_label_map = {
+        "serpapi": "SerpAPI API Key",
+        "dataforseo": "DataForSEO API Key (Basic token or login:password)",
+        "brightdata": "Bright Data API Token",
+    }
+    provider_human = st.selectbox("Provider", ["SerpAPI", "DataForSEO", "Bright Data"], index=0)
+    provider = provider_human.lower().replace(" ", "")
+    serpapi_key = st.text_input(provider_label_map.get(provider, "API Key"), type="password", value="")
     terms_text = st.text_area("Terms (one per line)", "nike\nadidas\npuma\nnew balance\nasics\nOn Running\nSolomon")
     geo = st.text_input("Geo (e.g. GB, US — optional)", value="")
     
@@ -304,16 +311,20 @@ with st.sidebar:
     st.subheader("Autocomplete Explorer")
     st.caption("Discover better search terms and entities")
     
-    if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
-        if serpapi_key:
-            with st.spinner("Fetching autocomplete suggestions..."):
-                # Get terms from session state if available
-                if hasattr(st.session_state, 'terms') and st.session_state.terms:
-                    explore_autocomplete_options(st.session_state.terms, serpapi_key)
-                else:
-                    st.error("No terms available. Please run the analysis first.")
-        else:
-            st.error("Please enter your SerpAPI key first.")
+    if provider != "serpapi":
+        st.button("Explore Autocomplete Options", key="sidebar_autocomplete", disabled=True)
+        st.info("Autocomplete is only available with SerpAPI. Select SerpAPI to enable.")
+    else:
+        if st.button("Explore Autocomplete Options", key="sidebar_autocomplete"):
+            if serpapi_key:
+                with st.spinner("Fetching autocomplete suggestions..."):
+                    # Get terms from session state if available
+                    if hasattr(st.session_state, 'terms') and st.session_state.terms:
+                        explore_autocomplete_options(st.session_state.terms, serpapi_key)
+                    else:
+                        st.error("No terms available. Please run the analysis first.")
+            else:
+                st.error("Please enter your SerpAPI key first.")
     
 
     st.markdown("---")
@@ -839,7 +850,7 @@ def create_yoy_monthly_chart_debug(long_df: pd.DataFrame, term: str) -> alt.Char
 
 if run:
     if not serpapi_key:
-        st.error("Please enter your SerpAPI key.")
+        st.error("Please enter your API key.")
         st.stop()
 
 
@@ -849,7 +860,7 @@ if run:
         st.error("Enter at least two terms.")
         st.stop()
 
-    current_params = get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache)
+    current_params = get_current_params(serpapi_key, terms_text, geo, timeframe, group_size, cache_dir, sleep_ms, use_cache, provider)
     if should_reload_data(current_params):
         with st.spinner("Fetching, stitching, and preparing views..."):
             try:
@@ -865,6 +876,7 @@ if run:
                 df_scaled, pivot_scores, scales, pair_metrics, term_instability, ratio_samples, raw_responses = stitch_terms(
                     serpapi_key=serpapi_key,
                     terms=terms,
+                    provider=provider,
                     geo=geo,
                     timeframe=timeframe,
                     group_size=group_size,
@@ -887,6 +899,7 @@ if run:
                         from stitcher import TrendsFetcher
                         fetcher = TrendsFetcher(
                             serpapi_key=serpapi_key,
+                            provider=provider,
                             geo=geo,
                             timeframe=timeframe,
                             cache_dir=cache_dir,
@@ -1358,7 +1371,7 @@ if run:
     st.markdown("---")
     with st.expander("Raw API Responses", expanded=False):
         st.subheader("Raw API Response Data")
-        st.caption("Download the raw JSON responses from SerpAPI for offline validation and debugging.")
+        st.caption("Download the raw JSON responses from the selected provider for offline validation and debugging.")
         
         if 'raw_responses' in st.session_state and st.session_state.raw_responses is not None and len(st.session_state.raw_responses) > 0:
             # Show summary of responses
