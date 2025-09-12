@@ -1,3 +1,513 @@
+import hashlib
+import json
+import math
+import os
+import time
+import itertools
+import datetime as dt
+from datetime import date, timedelta
+from typing import List, Tuple, Dict
+
+import numpy as np
+import pandas as pd
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
+logger.propagate = True
+
+def build_trends_payload(keywords, start_date=None, end_date=None,
+                         location_code=0, language_code="en",
+                         default_timeframe="today 5-y"):
+    """
+    Returns a dict for DataForSEO Trends (google_trends_graph).
+    - Absolute dates: YYYY-MM-DD only (no times, no tz).
+    - Else timeframe: 'today 5-y' for YoY coverage.
+    - location_code: 0 = worldwide (works); use real code if user selects a country.
+    """
+    # Clean keywords (dedupe, trim, limit 5)
+    kws = [k.strip() for k in keywords if k and str(k).strip()]
+    kws = list(dict.fromkeys(kws))[:5]
+    if not kws:
+        raise ValueError("No keywords provided")
+
+    payload = {
+        "type": "trends",
+        "location_code": int(location_code),
+        "language_code": language_code,
+        "keywords": kws,
+    }
+
+    if start_date and end_date:
+        # Sanitize to YYYY-MM-DD
+        sd = str(start_date)
+        ed = str(end_date)
+        # Safety: enforce ordering
+        if sd > ed:
+            sd, ed = ed, sd
+        # Safety: expand by 7 days to ensure full week buckets are included
+        # (helps avoid edge-week drop-outs for weekly cadence)
+        payload["date_from"] = sd
+        payload["date_to"]   = ed
+    else:
+        # No explicit dates: ask for enough history for YoY
+        payload["time_range"] = default_timeframe  # e.g., 'today 5-y'
+
+    return payload
+
+def build_dfseo_payload(keywords, start_date=None, end_date=None, *,
+                        endpoint="explore",  # "explore" or "graph"
+                        location_name=None,  # e.g., "Worldwide" or "United Kingdom"
+                        language_name=None,  # e.g., "English"
+                        timeframe="today 5-y"):  # fallback when no explicit dates
+    """
+    Returns a payload compatible with the selected endpoint and strips unsupported fields.
+    IMPORTANT: Do NOT send 'location_code' to Trends endpoints – it will 40501.
+    """
+    kws = [k.strip() for k in keywords if k and str(k).strip()]
+    kws = list(dict.fromkeys(kws))[:5]
+    if not kws:
+        raise ValueError("No keywords provided")
+
+    base = {"api": "keywords_data", "se": "google_trends", "type": "trends", "keywords": kws}
+
+    # Allowed optional fields differ per endpoint. Keep it strict:
+    if endpoint == "explore":
+        allowed = {"api", "se", "type", "keywords", "time_range", "date_from", "date_to",
+                   "location_name", "language_name"}
+    elif endpoint == "graph":
+        allowed = {"api", "se", "type", "keywords", "time_range", "date_from", "date_to",
+                   "location_name", "language_name"}
+    else:
+        raise ValueError("endpoint must be 'explore' or 'graph'")
+
+    # Dates vs timeframe (never send both)
+    if start_date and end_date:
+        sd, ed = str(start_date), str(end_date)
+        if sd > ed: sd, ed = ed, sd
+        base["date_from"], base["date_to"] = sd, ed
+    else:
+        base["time_range"] = timeframe  # ensure enough history for YoY
+
+    # Optional human-readable fields (omit if None)
+    if location_name: base["location_name"] = location_name
+    if language_name: base["language_name"] = language_name
+
+    # Strip anything not explicitly allowed
+    return {k: v for k, v in base.items() if k in allowed}
+
+# -----------------------
+# Helpers / Caching
+# -----------------------
+
+def _mk_cache_path(cache_dir: str, params: Dict) -> str:
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(
+            f"Failed to create cache directory '{cache_dir}': {e}"
+        ) from e
+    blob = json.dumps(params, sort_keys=True, ensure_ascii=False)
+    h = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:24]
+    return os.path.join(cache_dir, f"{h}.json")
+
+
+def _load_cache(path: str):
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return None
+
+
+def _save_cache(path: str, data: Dict):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+# -----------------------
+# Fetcher
+# -----------------------
+
+class TrendsFetcher:
+    """Fetches Google Trends interest-over-time via a selectable provider.
+
+    Providers:
+      - serpapi (default)
+      - dataforseo
+      - brightdata
+    """
+
+    def __init__(
+        self,
+        serpapi_key: str,
+        provider: str = "serpapi",
+        geo: str = "",
+        timeframe: str = "today 12-m",
+        cache_dir: str = ".cache",
+        sleep_ms: int = 250,
+        use_cache: bool = True,
+        debug: bool = False,
+        collect_raw_responses: bool = False,
+    ) -> None:
+        self.key = serpapi_key
+        self.provider = (provider or "serpapi").lower()
+        self.geo = geo
+        self.timeframe = timeframe
+        self.cache_dir = cache_dir
+        self.sleep_ms = sleep_ms
+        self.use_cache = use_cache
+        self.debug = debug
+        self.collect_raw_responses = collect_raw_responses
+        self.raw_responses = []  # Store raw responses for download
+
+    def _log_debug(self, *args, **kwargs) -> None:
+        if not self.debug:
+            return
+        try:  # pragma: no cover - best effort
+            import streamlit as st
+
+            st.write(*args, **kwargs)
+        except Exception:
+            print(*args, **kwargs)
+
+    def fetch_batch(self, terms: List[str]) -> pd.DataFrame:
+        if len(terms) > 5:
+            raise ValueError("Max 5 terms per Trends batch.")
+        print(f"DEBUG: Fetching batch: {terms}, Provider: {self.provider}")
+        self._log_debug(f"Fetching batch: {terms}")
+        self._log_debug(f"Provider: {self.provider}")
+        
+        # Try different query formats - SerpAPI might prefer different separators
+        q = ",".join(terms)  # comma-separated
+        self._log_debug(f"Query string: {q}")
+        
+        # Shared request params (provider-specific wiring later)
+        params = {
+            "engine": "google_trends",
+            "q": q,
+            "hl": "en",
+            "date": self.timeframe if self.timeframe else "all",
+        }
+        if self.geo:
+            params["geo"] = self.geo
+
+        # Build cache identity without storing secrets
+        cache_identity = dict(params)
+        cache_identity["provider"] = self.provider
+        cache_identity["key_fingerprint"] = hashlib.sha256((self.key or "").encode("utf-8")).hexdigest()[:8]
+
+        self._log_debug(f"Full request params (normalized): {cache_identity}")
+        
+        cache_path = _mk_cache_path(self.cache_dir, cache_identity)
+        self._log_debug("Cache path", cache_path)
+        data = _load_cache(cache_path) if self.use_cache else None
+        if data is None:
+            self._log_debug("Making API request...")
+            try:
+                if self.provider == "serpapi":
+                    serp_params = dict(params)
+                    serp_params["api_key"] = self.key
+                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
+                elif self.provider == "brightdata":
+                    headers = {"Authorization": f"Bearer {self.key}"}
+                    r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
+                elif self.provider == "dataforseo":
+                    print("DEBUG: Making DataForSEO API call")
+                    self._log_debug("Making DataForSEO API call")
+                    import base64
+                    # Support raw "login:password" or already-prefixed Basic token
+                    if self.key.strip().lower().startswith("basic "):
+                        auth_header = self.key.strip()
+                    elif ":" in self.key:
+                        token = base64.b64encode(self.key.encode("utf-8")).decode("utf-8")
+                        auth_header = f"Basic {token}"
+                    else:
+                        # Assume provided value is base64 token
+                        auth_header = f"Basic {self.key}"
+
+                    dfs_headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": auth_header,
+                    }
+                    
+                    # Use robust payload builder for DataForSEO
+                    try:
+                        # Parse timeframe to extract dates if possible
+                        start_date, end_date = None, None
+                        if self.timeframe and "today" not in self.timeframe.lower():
+                            # Try to parse custom timeframe for dates
+                            # For now, use default timeframe for safety
+                            pass
+                        
+                        payload_dict = build_dfseo_payload(
+                            keywords=terms,
+                            start_date=start_date,
+                            end_date=end_date,
+                            endpoint="explore",
+                            location_name="Worldwide" if not self.geo else None,
+                            language_name="English",
+                            timeframe="today 5-y"  # Ensure YoY coverage
+                        )
+                        
+                        # Note: No need to add country_iso_code - it's not supported by explore endpoint
+                        # If geo is specified, we could use location_name instead
+                        if self.geo:
+                            # For now, just log that geo was requested but not supported
+                            print(f"DEBUG: Geo '{self.geo}' requested but not supported by explore endpoint")
+                        
+                        payload = [payload_dict]
+                        print(f"DEBUG: DataForSEO payload: {payload}")
+                        
+                    except Exception as e:
+                        print(f"DEBUG: Payload builder error: {e}")
+                        # Fallback to simple payload
+                        payload = [{
+                            "keywords": terms,
+                            "language_code": "en",
+                            "time_range": "today 5-y",
+                            **({"country_iso_code": self.geo} if self.geo else {}),
+                        }]
+                    
+                    r = requests.post(
+                        "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
+                        headers=dfs_headers,
+                        data=json.dumps(payload),
+                        timeout=60,
+                    )
+                else:
+                    raise RuntimeError(f"Unsupported provider: {self.provider}")
+                status = r.status_code
+                body = getattr(r, "text", "") or ""
+                self._log_debug("HTTP status", status)
+                rate = r.headers.get("X-RateLimit-Remaining")
+                if rate is not None:
+                    self._log_debug("X-RateLimit-Remaining", rate)
+                
+                r.raise_for_status()
+                data = r.json()
+                
+                # Store raw response if collection is enabled
+                if self.collect_raw_responses:
+                    response_info = {
+                        "batch_terms": terms,
+                        "request_params": params,
+                        "response_data": data,
+                        "timestamp": time.time(),
+                        "cache_path": cache_path
+                    }
+                    self.raw_responses.append(response_info)
+                
+                # Provider-specific error surfacing
+                if self.provider == "serpapi":
+                    err = data.get("error") or data.get("error_message")
+                    if err:
+                        raise RuntimeError(f"SerpAPI error: {err}")
+                elif self.provider == "brightdata":
+                    if isinstance(data, dict) and data.get("error"):
+                        raise RuntimeError(f"Bright Data error: {data.get('error')}")
+                elif self.provider == "dataforseo":
+                    if isinstance(data, dict) and data.get("status_code") and data.get("status_code") != 20000:
+                        msg = data.get("status_message") or data.get("status") or "Unknown error"
+                        raise RuntimeError(f"DataForSEO error: {msg}")
+                    
+                # Log the response structure for debugging
+                self._log_debug(f"Response keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                if isinstance(data, dict) and 'interest_over_time' in data:
+                    io_data = data['interest_over_time']
+                    self._log_debug(f"interest_over_time type: {type(io_data)}")
+                    if isinstance(io_data, dict):
+                        self._log_debug(f"interest_over_time keys: {list(io_data.keys())}")
+                    elif isinstance(io_data, list) and len(io_data) > 0:
+                        self._log_debug(f"First interest_over_time item: {io_data[0]}")
+                
+                # Check if SerpAPI overrode our parameters
+                if self.provider == "serpapi" and isinstance(data, dict) and 'search_parameters' in data:
+                    search_params = data['search_parameters']
+                    self._log_debug(f"SerpAPI search parameters: {search_params}")
+                    if 'date' in search_params and search_params['date'] != self.timeframe:
+                        self._log_debug(f"⚠️ WARNING: SerpAPI overrode timeframe from '{self.timeframe}' to '{search_params['date']}'")
+                        
+            except requests.exceptions.RequestException as e:
+                msg = f"Network error: {e}; status={getattr(e.response, 'status_code', 'N/A')}"
+                if hasattr(e, 'response') and e.response is not None:
+                    rate = e.response.headers.get("X-RateLimit-Remaining")
+                    if rate is not None:
+                        msg += f"; X-RateLimit-Remaining={rate}"
+                    body = getattr(e.response, "text", "") or ""
+                    msg += f"; body={body[:200]}"
+                raise RuntimeError(msg)
+            except Exception as e:
+                msg = f"Unexpected error: {e}; status={status}"
+                if rate is not None:
+                    msg += f"; X-RateLimit-Remaining={rate}"
+                msg += f"; body={body[:200]}"
+                raise RuntimeError(msg)
+                
+            self._log_debug("Response sample", json.dumps(data)[:200])
+            if self.use_cache:
+                try:
+                    _save_cache(cache_path, data)
+                except Exception as cache_error:
+                    self._log_debug(f"Cache save failed: {cache_error}")
+            if self.sleep_ms > 0:
+                time.sleep(self.sleep_ms / 1000.0)
+        else:
+            self._log_debug("Using cached data", cache_path)
+
+        # Try to parse the response
+        try:
+            normalized = data
+            print(f"DEBUG: Provider: {self.provider}")
+            self._log_debug(f"Provider: {self.provider}")
+            if self.provider == "dataforseo":
+                print("DEBUG: Calling _normalize_dataforseo_payload")
+                self._log_debug("Calling _normalize_dataforseo_payload")
+                normalized = self._normalize_dataforseo_payload(data)
+                print(f"DEBUG: Normalized data keys: {list(normalized.keys()) if isinstance(normalized, dict) else 'Not a dict'}")
+                self._log_debug(f"Normalized data keys: {list(normalized.keys()) if isinstance(normalized, dict) else 'Not a dict'}")
+            return self._parse_timeseries(normalized, terms)
+        except Exception as parse_error:
+            self._log_debug(f"Initial parsing failed: {parse_error}")
+            # If parsing failed, try alternative query formats
+            return self._try_alternative_query_format(terms)
+
+    def _try_alternative_query_format(self, terms: List[str]) -> pd.DataFrame:
+        """Try alternative query formats if the main one fails"""
+        self._log_debug("Trying alternative query format...")
+        
+        # Try with different separators
+        query_formats = [
+            ",".join(terms),  # comma-separated
+            " ".join(terms),  # space-separated
+            "|".join(terms),  # pipe-separated
+        ]
+        
+        for q_format in query_formats:
+            try:
+                self._log_debug(f"Trying query format: {q_format}")
+                params = {
+                    "engine": "google_trends",
+                    "q": q_format,
+                    "hl": "en",  # Add language parameter
+                    "date": self.timeframe if self.timeframe else "all",  # Use selected timeframe or default to 'all'
+                }
+                if self.geo:
+                    params["geo"] = self.geo
+                
+                if self.provider == "serpapi":
+                    serp_params = dict(params)
+                    serp_params["api_key"] = self.key
+                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
+                elif self.provider == "brightdata":
+                    headers = {"Authorization": f"Bearer {self.key}"}
+                    r = requests.get("https://serp.brightdata.com/search", params=params, headers=headers, timeout=60)
+                else:
+                    break
+                r.raise_for_status()
+                data = r.json()
+                
+                if self.provider == "serpapi":
+                    err = data.get("error") or data.get("error_message")
+                    if err:
+                        self._log_debug(f"Format {q_format} failed with error: {err}")
+                        continue
+                
+                # Try to parse this response
+                normalized = data
+                if self.provider == "dataforseo":
+                    normalized = self._normalize_dataforseo_payload(data)
+                df = self._parse_timeseries(normalized, terms)
+                if not df.empty:
+                    self._log_debug(f"Success with query format: {q_format}")
+                    return df
+                    
+            except Exception as e:
+                self._log_debug(f"Format {q_format} failed: {e}")
+                continue
+        
+        raise RuntimeError("All query formats failed")
+
+    @staticmethod
+    def _parse_dataforseo_trends(payload: dict) -> List[Dict]:
+        """
+        Parse DataForSEO trends response format.
+        DataForSEO returns data under items[0].data[*].values, aligned with items[0].keywords.
+        """
+        rows = []
+        try:
+            for item in payload.get("items", []):
+                if item.get("type") != "google_trends_graph":
+                    continue
+                kws = item.get("keywords") or []
+                for dp in item.get("data", []):
+                    date_str = dp.get("date_from") or dp.get("date")
+                    ts = dp.get("timestamp")
+                    date_val = None
+                    if date_str:
+                        date_val = pd.to_datetime(date_str).date()
+                    elif ts:
+                        date_val = pd.to_datetime(int(ts), unit="s").date()
+                    values = dp.get("values")
+                    if isinstance(values, list) and len(values) == len(kws):
+                        for term, v in zip(kws, values):
+                            rows.append({"date": date_val, "term": term, "value": float(v)})
+            return rows
+        except Exception as e:
+            print(f"DEBUG: DataForSEO parser error: {e}")
+            return []
+
+    @staticmethod
+    def _parse_timeseries(payload: Dict, terms: List[str]) -> pd.DataFrame:
+        """
+        Parse SerpAPI payload into long form [date, term, value].
+        Handles multiple response formats from SerpAPI Google Trends.
+        """
+        # Debug: Log the full payload structure
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Parsing payload with keys: {list(payload.keys()) if isinstance(payload, dict) else 'Not a dict'}")
+        
+        # Try multiple possible paths for timeline data
+        timeline = None
+        if isinstance(payload, dict):
+            # Path 1: interest_over_time.timeline_data
+            io = payload.get("interest_over_time", {})
+            if isinstance(io, dict):
+                timeline = io.get("timeline_data")
+            
+            # Path 2: direct timeline_data
+            if timeline is None:
+                timeline = payload.get("timeline_data")
+            
+            # Path 3: interest_over_time directly
+            if timeline is None and isinstance(io, list):
+                timeline = io
+            
+            # Path 4: Check for other possible structures
+            if timeline is None:
+                for key in payload.keys():
+                    if 'time' in key.lower() or 'trend' in key.lower():
+                        potential = payload.get(key)
+                        if isinstance(potential, list) and len(potential) > 0:
+                            if isinstance(potential[0], dict) and any(k in potential[0] for k in ['time', 'date', 'timestamp']):
+                                timeline = potential
+                                logger.debug(f"Found timeline in key: {key}")
+                                break
+
+        if not timeline:
+            # Try DataForSEO parser as fallback
+            print("DEBUG: Trying DataForSEO parser as fallback")
+            dataforseo_rows = TrendsFetcher._parse_dataforseo_trends(payload)
+            if dataforseo_rows:
+                print(f"DEBUG: DataForSEO parser found {len(dataforseo_rows)} rows")
+                return pd.DataFrame(dataforseo_rows)
+            
+            keys = list(payload.keys()) if isinstance(payload, dict) else []
+            logger.error(f"No timeline_data found. Available keys: {keys}")
+            logger.error(f"Payload sample: {str(payload)[:500]}")
+            raise RuntimeError(f"No timeline_data returned. Raw keys: {keys}")
+
+        logger.debug(f"Found timeline with {len(timeline)} points")
         if len(timeline) > 0:
             logger.debug(f"First timeline point: {timeline[0]}")
 
