@@ -19,14 +19,13 @@ logger.propagate = True
 def build_dfseo_trends_payload(
     keywords,
     *,
-    endpoint="graph",          # "graph" or "explore"
+    endpoint="explore",        # "explore" for Google Trends API
     start_date=None,
-    end_date=None,
-    time_range="today 5-y"     # default when no dates given
+    end_date=None
 ):
     """
-    Returns a payload valid for DataForSEO Google Trends endpoints.
-    IMPORTANT: Do NOT include ANY location or language fields - they cause 40501 errors.
+    Returns a payload valid for DataForSEO Google Trends API.
+    IMPORTANT: Google Trends API does NOT support time_range - only date_from/date_to.
     """
     # sanitize keywords
     kws = [str(k).strip() for k in keywords if str(k).strip()]
@@ -44,7 +43,12 @@ def build_dfseo_trends_payload(
         if sd > ed: sd, ed = ed, sd
         base["date_from"], base["date_to"] = sd, ed
     else:
-        base["time_range"] = time_range  # ensures enough history for YoY
+        # For YoY coverage, provide a 2+ year range
+        from datetime import date, timedelta
+        end_date = date.today()
+        start_date = end_date - timedelta(days=730)  # ~2 years for YoY
+        base["date_from"] = start_date.strftime("%Y-%m-%d")
+        base["date_to"] = end_date.strftime("%Y-%m-%d")
 
     return base
 
@@ -203,7 +207,7 @@ class TrendsFetcher:
                             start_date=start_date,
                             end_date=end_date,
                             endpoint="explore",  # Use explore endpoint for time-series
-                            time_range="today 5-y"  # Ensure YoY coverage
+                            # time_range="today 5-y"  # Ensure YoY coverage - REMOVED
                         )
                         
                         # Note: No need to add country_iso_code - it's not supported by explore endpoint
@@ -218,10 +222,14 @@ class TrendsFetcher:
                     except Exception as e:
                         print(f"DEBUG: Payload builder error: {e}")
                         # Fallback to simple payload with supported fields only
+                        from datetime import date, timedelta
+                        end_date = date.today()
+                        start_date = end_date - timedelta(days=730)  # ~2 years for YoY
                         payload = [{
                             "type": "trends",
                             "keywords": terms,
-                            "time_range": "today 5-y"
+                            "date_from": start_date.strftime("%Y-%m-%d"),
+                            "date_to": end_date.strftime("%Y-%m-%d")
                         }]
                     
                     r = requests.post(
