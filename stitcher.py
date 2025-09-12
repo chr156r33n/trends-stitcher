@@ -871,6 +871,7 @@ def stitch_terms(
         and ratio samples for diagnostics.
     """
     log = logger.info if verbose else logger.debug
+    print(f"DEBUG: stitch_terms called with provider: {provider}")
     log("[stitch_terms] Starting with %d terms", len(terms))
 
     fetcher = TrendsFetcher(
