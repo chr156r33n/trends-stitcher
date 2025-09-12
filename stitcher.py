@@ -148,6 +148,7 @@ class TrendsFetcher:
         use_cache: bool = True,
         debug: bool = False,
         collect_raw_responses: bool = False,
+        brightdata_zone: str = None,  # Add this parameter
     ) -> None:
         self.key = serpapi_key
         self.provider = (provider or "serpapi").lower()
@@ -158,6 +159,7 @@ class TrendsFetcher:
         self.use_cache = use_cache
         self.debug = debug
         self.collect_raw_responses = collect_raw_responses
+        self.brightdata_zone = brightdata_zone  # Add this line
         self.raw_responses = []  # Store raw responses for download
 
     def _log_debug(self, *args, **kwargs) -> None:
@@ -211,7 +213,7 @@ class TrendsFetcher:
                 elif self.provider == "brightdata":
                     headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
                     payload = {
-                        "zone": "YOUR_SERP_API_ZONE",  # This should be configurable
+                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",  # Use configurable zone
                         "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
                         "format": "raw"
                     }
@@ -1021,6 +1023,7 @@ def stitch_terms(
     use_cache: bool = True,
     debug: bool = False,
     collect_raw_responses: bool = False,
+    brightdata_zone: str = None,  # Add this parameter
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame, List[Dict]]:
     """
     Main pipeline:
@@ -1045,6 +1048,7 @@ def stitch_terms(
         use_cache=use_cache,
         debug=debug,
         collect_raw_responses=collect_raw_responses,
+        brightdata_zone=brightdata_zone,  # Add this line
     )
     batches = make_batches(terms, group_size=group_size)
     log("[stitch_terms] Created %d batches", len(batches))

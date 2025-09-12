@@ -277,6 +277,12 @@ with st.sidebar:
     provider_human = st.selectbox("Provider", ["SerpAPI", "DataForSEO", "Bright Data"], index=0)
     provider = provider_human.lower().replace(" ", "")
     serpapi_key = st.text_input(provider_label_map.get(provider, "API Key"), type="password", value="")
+    
+    # Add Bright Data zone field when Bright Data is selected
+    brightdata_zone = ""
+    if provider == "brightdata":
+        brightdata_zone = st.text_input("Bright Data Zone", value="", help="Enter your Bright Data SERP API zone name (e.g., 'serp_zone_1')")
+    
     terms_text = st.text_area("Terms (one per line)", "nike\nadidas\npuma\nnew balance\nasics\nOn Running\nSolomon")
     geo = st.text_input("Geo (e.g. GB, US — optional)", value="")
     
@@ -993,6 +999,7 @@ if run:
                     use_cache=use_cache,
                     debug=show_debug,
                     collect_raw_responses=collect_raw_responses,
+                    brightdata_zone=brightdata_zone,  # Add this line
                 )
 
                 if show_debug:
