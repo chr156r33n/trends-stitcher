@@ -1,6 +1,8 @@
 from datetime import date
 import traceback
 from typing import Tuple
+import logging
+import io
 
 import numpy as np
 import pandas as pd
@@ -8,6 +10,50 @@ import streamlit as st
 import altair as alt
 
 from stitcher import stitch_terms
+
+# Custom logging handler for Streamlit
+class StreamlitLogHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.log_buffer = io.StringIO()
+    
+    def emit(self, record):
+        log_entry = self.format(record)
+        self.log_buffer.write(log_entry + '\n')
+        # Store in session state for display
+        if 'debug_logs' not in st.session_state:
+            st.session_state.debug_logs = []
+        st.session_state.debug_logs.append(log_entry)
+        # Keep only last 50 log entries
+        if len(st.session_state.debug_logs) > 50:
+            st.session_state.debug_logs = st.session_state.debug_logs[-50:]
+
+# Set up custom logging
+def setup_debug_logging():
+    # Clear any existing handlers
+    logging.getLogger().handlers.clear()
+    
+    # Add our custom handler
+    handler = StreamlitLogHandler()
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    
+    # Add to root logger
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
+    # Also add to stitcher logger
+    stitcher_logger = logging.getLogger('stitcher')
+    stitcher_logger.addHandler(handler)
+    stitcher_logger.setLevel(logging.DEBUG)
+
+# Function to display debug logs in sidebar
+def show_debug_logs():
+    if 'debug_logs' in st.session_state and st.session_state.debug_logs:
+        with st.expander("🐛 Debug Logs", expanded=False):
+            for log_entry in st.session_state.debug_logs[-20:]:  # Show last 20 entries
+                st.text(log_entry)
 
 def explore_autocomplete_options(terms: list, api_key: str):
     """Explore autocomplete options for each term to find better entity-based searches"""
@@ -394,7 +440,7 @@ def cached_melt_long(df_scaled: pd.DataFrame) -> pd.DataFrame:
 def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     """
     Calculate year-over-year comparison for a given term.
-    Only matches exact previous year dates (365 days earlier).
+    Uses tolerance-based matching to handle different data cadences (daily/weekly/monthly).
     """
     # Filter data for the specific term and sort by date
     g = long_df[long_df["term"] == term].sort_values("date").copy()
@@ -412,21 +458,49 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     logger.debug(f"Data range: {g['date'].min()} to {g['date'].max()}")
     logger.debug(f"Total data points: {len(g)}")
     
-    # Create a lookup table for previous year data
-    # Use a more robust method that handles leap years properly
-    # Instead of subtracting 365 days, we'll subtract 1 year and adjust for leap years
+    # Determine data cadence and set appropriate tolerance
+    date_diffs = g["date"].diff().dropna()
+    if len(date_diffs) > 0:
+        median_diff = date_diffs.median()
+        if median_diff.days <= 1:
+            # Daily data - use 3 day tolerance
+            tolerance_days = 3
+        elif median_diff.days <= 7:
+            # Weekly data - use 7 day tolerance  
+            tolerance_days = 7
+        else:
+            # Monthly or other - use 15 day tolerance
+            tolerance_days = 15
+    else:
+        tolerance_days = 7  # Default to weekly tolerance
+    
+    logger.debug(f"Detected data cadence: ~{median_diff.days} days, using {tolerance_days} day tolerance")
+    
+    # Create a more robust previous year lookup with tolerance
     g["prev_year_date"] = g["date"].apply(lambda x: x.replace(year=x.year - 1))
     
-    # Create a mapping from current dates to values (for previous year lookup)
-    date_value_map = g.set_index("date")["value"].to_dict()
+    # For each row, find the closest previous year value within tolerance
+    prior_values = []
+    for _, row in g.iterrows():
+        target_date = row["prev_year_date"]
+        current_date = row["date"]
+        
+        # Find all dates within tolerance of the target date
+        date_diffs = abs((g["date"] - target_date).dt.days)
+        within_tolerance = date_diffs <= tolerance_days
+        
+        if within_tolerance.any():
+            # Get the closest match
+            closest_idx = date_diffs[within_tolerance].idxmin()
+            prior_value = g.loc[closest_idx, "value"]
+            logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> {g.loc[closest_idx, 'date']} = {prior_value}")
+        else:
+            prior_value = np.nan
+            logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No match")
+        
+        prior_values.append(prior_value)
     
-    # For each row, look up the value from exactly 1 year ago
-    g["prior_value"] = g["prev_year_date"].map(date_value_map)
-    
-    # Debug: Show some examples of the mapping
-    logger.debug(f"Sample date mappings:")
-    for i, row in g.head(5).iterrows():
-        logger.debug(f"  {row['date']} -> prev_year_date: {row['prev_year_date']} -> value: {row['prior_value']}")
+    g["prior_value"] = prior_values
     
     # Calculate differences
     g["abs_diff"] = g["value"] - g["prior_value"]
@@ -1593,3 +1667,6 @@ if run:
                     mime="text/csv",
                     key="ratio_samples_download"
                 )
+
+    # Show debug logs
+    show_debug_logs()
