@@ -216,6 +216,9 @@ if 'collect_raw_responses' not in st.session_state:
 st.set_page_config(page_title="Google Trend Stitcher", layout="wide")
 st.title("Google Trend Stitcher")
 
+# Initialize logging to Streamlit UI
+setup_debug_logging()
+
 # Show cache status
 if st.session_state.data_loaded:
     st.success(f"Data loaded: {len(st.session_state.terms) if st.session_state.terms else 0} terms, {st.session_state.df_scaled.shape[0] if st.session_state.df_scaled is not None else 0} data points")
@@ -1175,7 +1178,14 @@ if run:
                         st.success("**Reasonable scaling** - all terms should be visible in charts.")
 
             except Exception as e:
-                st.error(f"Error during data fetching: {str(e)}")
+                # Friendlier JSON/network error hints
+                msg = str(e)
+                if "JSON parse failed" in msg or "Expecting value" in msg:
+                    st.error("The API response was not valid JSON.")
+                    st.info("Tips: Verify your API key, endpoint, and select the correct provider. For Bright Data, ensure the zone is correct and the endpoint returns JSON.")
+                    st.code(msg)
+                else:
+                    st.error(f"Error during data fetching: {msg}")
                 if show_debug:
                     st.write("Full traceback:")
                     st.code(traceback.format_exc())
@@ -1503,6 +1513,30 @@ if run:
                     st.write(f"**Terms:** {', '.join(response['batch_terms'])}")
                     st.write(f"**Request Parameters:**")
                     st.json(response['request_params'])
+                    
+                    # Network diagnostics
+                    st.write("**Network Diagnostics:**")
+                    diag_cols = st.columns(2)
+                    with diag_cols[0]:
+                        st.write(f"Provider: {response.get('provider', 'unknown')}")
+                        st.write(f"HTTP Status: {response.get('http_status', 'unknown')}")
+                        if response.get('request_endpoint'):
+                            st.write(f"Endpoint: {response.get('request_endpoint')}")
+                    with diag_cols[1]:
+                        hdrs = response.get('response_headers') or {}
+                        ctype = response.get('content_type') or hdrs.get('Content-Type')
+                        st.write(f"Content-Type: {ctype}")
+                        if 'X-RateLimit-Remaining' in (hdrs or {}):
+                            st.write(f"X-RateLimit-Remaining: {hdrs.get('X-RateLimit-Remaining')}")
+                    
+                    # Response structure and sample
+                    st.write(f"**Response Structure:**")
+                    st.json({k: type(v).__name__ for k, v in response.get('response_data', {}).items()} if isinstance(response.get('response_data'), dict) else str(type(response.get('response_data'))))
+                    
+                    sample = response.get('response_text_sample')
+                    if sample:
+                        st.write("**Response Body (first 500 chars):**")
+                        st.code(sample)
                     st.write(f"**Response Structure:**")
                     st.json({k: type(v).__name__ for k, v in response['response_data'].items()})
             
