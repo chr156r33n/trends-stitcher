@@ -161,13 +161,24 @@ class TrendsFetcher:
         data = _load_cache(cache_path) if self.use_cache else None
         if data is None:
             self._log_debug("Making API request...")
+            status = None
+            rate = None
+            body = ""
             try:
                 request_endpoint = None
                 if self.provider == "serpapi":
                     serp_params = dict(params)
                     serp_params["api_key"] = self.key
                     request_endpoint = "https://serpapi.com/search"
+                    sanitized = {k: v for k, v in serp_params.items() if k != "api_key"}
+                    self._log_debug(f"Request endpoint: {request_endpoint}")
+                    self._log_debug(f"Request params: {sanitized}")
                     r = requests.get(request_endpoint, params=serp_params, timeout=60)
+                    elapsed = getattr(r, "elapsed", None)
+                    elapsed = elapsed.total_seconds() if elapsed else "N/A"
+                    self._log_debug(
+                        f"Response status: {r.status_code}; elapsed: {elapsed}"
+                    )
                 elif self.provider == "brightdata":
                     headers = {
                         "Authorization": f"Bearer {self.key}",
@@ -189,10 +200,17 @@ class TrendsFetcher:
                         "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",
                         "url": trends_url,
                         "method": "GET",
-                        "format": "json"
+                        "format": "json",
                     }
                     request_endpoint = "https://api.brightdata.com/request"
+                    self._log_debug(f"Request endpoint: {request_endpoint}")
+                    self._log_debug(f"Request payload: {payload}")
                     r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
+                    elapsed = getattr(r, "elapsed", None)
+                    elapsed = elapsed.total_seconds() if elapsed else "N/A"
+                    self._log_debug(
+                        f"Response status: {r.status_code}; elapsed: {elapsed}"
+                    )
                 elif self.provider == "dataforseo":
                     print("DEBUG: Making DataForSEO API call")
                     self._log_debug("Making DataForSEO API call")
@@ -211,7 +229,7 @@ class TrendsFetcher:
                         "Content-Type": "application/json",
                         "Authorization": auth_header,
                     }
-                    
+
                     # Use robust payload builder for DataForSEO
                     try:
                         # Parse timeframe to extract dates if possible
@@ -220,7 +238,7 @@ class TrendsFetcher:
                             # Try to parse custom timeframe for dates
                             # For now, use default timeframe for safety
                             pass
-                        
+
                         payload_dict = build_dfseo_trends_payload(
                             keywords=terms,
                             start_date=start_date,
@@ -228,16 +246,16 @@ class TrendsFetcher:
                             endpoint="explore",  # Use explore endpoint for time-series
                             # time_range="today 5-y"  # Ensure YoY coverage - REMOVED
                         )
-                        
+
                         # Note: No need to add country_iso_code - it's not supported by explore endpoint
                         # If geo is specified, we could use location_name instead
                         if self.geo:
                             # For now, just log that geo was requested but not supported
                             print(f"DEBUG: Geo '{self.geo}' requested but not supported by explore endpoint")
-                        
+
                         payload = [payload_dict]
                         print(f"DEBUG: DataForSEO payload: {payload}")
-                        
+
                     except Exception as e:
                         print(f"DEBUG: Payload builder error: {e}")
                         # Fallback to simple payload with supported fields only
@@ -247,15 +265,22 @@ class TrendsFetcher:
                         payload = [{
                             "keywords": terms,
                             "date_from": start_date.strftime("%Y-%m-%d"),
-                            "date_to": end_date.strftime("%Y-%m-%d")
+                            "date_to": end_date.strftime("%Y-%m-%d"),
                         }]
-                    
+
                     request_endpoint = "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live"
+                    self._log_debug(f"Request endpoint: {request_endpoint}")
+                    self._log_debug(f"Request payload: {payload}")
                     r = requests.post(
                         request_endpoint,
                         headers=dfs_headers,
                         data=json.dumps(payload),
                         timeout=60,
+                    )
+                    elapsed = getattr(r, "elapsed", None)
+                    elapsed = elapsed.total_seconds() if elapsed else "N/A"
+                    self._log_debug(
+                        f"Response status: {r.status_code}; elapsed: {elapsed}"
                     )
                 else:
                     raise RuntimeError(f"Unsupported provider: {self.provider}")
@@ -353,6 +378,7 @@ class TrendsFetcher:
                 # ``e.response``. Fall back to the last response ``r`` if available
                 # so callers still see useful diagnostics like status code and
                 # rate-limit headers.
+                logger.error("Request to %s failed: %s", request_endpoint, e)
                 resp = getattr(e, "response", None)
                 if resp is None:
                     resp = locals().get("r")
