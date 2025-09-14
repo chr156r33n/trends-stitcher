@@ -3,12 +3,17 @@ import traceback
 from typing import Tuple
 import logging
 import io
+import os
+import sys
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import altair as alt
 
+# Ensure the local stitcher module is imported even if a similarly named
+# package is installed in the environment.
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from stitcher import stitch_terms
 
 # Custom logging handler for Streamlit
@@ -215,6 +220,9 @@ if 'collect_raw_responses' not in st.session_state:
 
 st.set_page_config(page_title="Google Trend Stitcher", layout="wide")
 st.title("Google Trend Stitcher")
+
+# Initialize logging to Streamlit UI
+setup_debug_logging()
 
 # Show cache status
 if st.session_state.data_loaded:
@@ -983,6 +991,30 @@ if run:
     if should_reload_data(current_params):
         with st.spinner("Fetching, stitching, and preparing views..."):
             try:
+                # Live progress UI
+                progress_bar = st.progress(0)
+                status_placeholder = st.empty()
+
+                def on_progress(evt: dict):
+                    stage = evt.get("stage", "")
+                    msg = evt.get("message", "")
+                    total = evt.get("total_batches") or 0
+                    current = evt.get("current_batch") or 0
+                    # Map stages to rough progress percentages
+                    stage_weights = {
+                        "start": 0,
+                        "batching": 5,
+                        "fetch": 5 + int(70 * (current / max(1, total))) if total else 20,
+                        "fetched": 75,
+                        "pairwise": 82,
+                        "scaling": 88,
+                        "wide": 93,
+                        "done": 100,
+                    }
+                    pct = stage_weights.get(stage, min(99, 5 + int(70 * (current / max(1, total))) if total else 25))
+                    progress_bar.progress(min(100, max(0, pct)))
+                    status_placeholder.info(f"{msg}")
+
                 # Add debug info
                 if show_debug:
                     st.info(f"Starting with {len(terms)} terms: {terms}")
@@ -992,7 +1024,7 @@ if run:
                     st.info(f"Date filters: {start_date} to {end_date}")
                     st.info(f"Note: API timeframe ({timeframe}) may limit available data regardless of date filters")
                 
-                df_scaled, pivot_scores, scales, pair_metrics, term_instability, ratio_samples, raw_responses = stitch_terms(
+                result = stitch_terms(
                     serpapi_key=serpapi_key,
                     terms=terms,
                     provider=provider,
@@ -1006,7 +1038,36 @@ if run:
                     debug=show_debug,
                     collect_raw_responses=collect_raw_responses,
                     brightdata_zone=brightdata_zone,  # Add this line
+                    progress_callback=on_progress,
                 )
+
+                if collect_raw_responses:
+                    (
+                        df_scaled,
+                        pivot_scores,
+                        scales,
+                        pair_metrics,
+                        term_instability,
+                        ratio_samples,
+                        raw_responses,
+                    ) = result
+                else:
+                    (
+                        df_scaled,
+                        pivot_scores,
+                        scales,
+                        pair_metrics,
+                        term_instability,
+                        ratio_samples,
+                    ) = result
+                    raw_responses = []
+
+                # Ensure progress shows completion
+                try:
+                    progress_bar.progress(100)
+                    status_placeholder.success("Completed stitching")
+                except Exception:
+                    pass
 
                 if show_debug:
                     st.success(f"Successfully fetched data: {df_scaled.shape}")
@@ -1175,7 +1236,14 @@ if run:
                         st.success("**Reasonable scaling** - all terms should be visible in charts.")
 
             except Exception as e:
-                st.error(f"Error during data fetching: {str(e)}")
+                # Friendlier JSON/network error hints
+                msg = str(e)
+                if "JSON parse failed" in msg or "Expecting value" in msg:
+                    st.error("The API response was not valid JSON.")
+                    st.info("Tips: Verify your API key, endpoint, and select the correct provider. For Bright Data, ensure the zone is correct and the endpoint returns JSON.")
+                    st.code(msg)
+                else:
+                    st.error(f"Error during data fetching: {msg}")
                 if show_debug:
                     st.write("Full traceback:")
                     st.code(traceback.format_exc())
@@ -1503,6 +1571,30 @@ if run:
                     st.write(f"**Terms:** {', '.join(response['batch_terms'])}")
                     st.write(f"**Request Parameters:**")
                     st.json(response['request_params'])
+                    
+                    # Network diagnostics
+                    st.write("**Network Diagnostics:**")
+                    diag_cols = st.columns(2)
+                    with diag_cols[0]:
+                        st.write(f"Provider: {response.get('provider', 'unknown')}")
+                        st.write(f"HTTP Status: {response.get('http_status', 'unknown')}")
+                        if response.get('request_endpoint'):
+                            st.write(f"Endpoint: {response.get('request_endpoint')}")
+                    with diag_cols[1]:
+                        hdrs = response.get('response_headers') or {}
+                        ctype = response.get('content_type') or hdrs.get('Content-Type')
+                        st.write(f"Content-Type: {ctype}")
+                        if 'X-RateLimit-Remaining' in (hdrs or {}):
+                            st.write(f"X-RateLimit-Remaining: {hdrs.get('X-RateLimit-Remaining')}")
+                    
+                    # Response structure and sample
+                    st.write(f"**Response Structure:**")
+                    st.json({k: type(v).__name__ for k, v in response.get('response_data', {}).items()} if isinstance(response.get('response_data'), dict) else str(type(response.get('response_data'))))
+                    
+                    sample = response.get('response_text_sample')
+                    if sample:
+                        st.write("**Response Body (first 500 chars):**")
+                        st.code(sample)
                     st.write(f"**Response Structure:**")
                     st.json({k: type(v).__name__ for k, v in response['response_data'].items()})
             

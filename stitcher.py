@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import requests
 import logging
+from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 logger.propagate = True
@@ -160,19 +161,56 @@ class TrendsFetcher:
         data = _load_cache(cache_path) if self.use_cache else None
         if data is None:
             self._log_debug("Making API request...")
+            status = None
+            rate = None
+            body = ""
             try:
+                request_endpoint = None
                 if self.provider == "serpapi":
                     serp_params = dict(params)
                     serp_params["api_key"] = self.key
-                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=90)
+                    request_endpoint = "https://serpapi.com/search"
+                    sanitized = {k: v for k, v in serp_params.items() if k != "api_key"}
+                    self._log_debug(f"Request endpoint: {request_endpoint}")
+                    self._log_debug(f"Request params: {sanitized}")
+                    r = requests.get(request_endpoint, params=serp_params, timeout=60)
+                    elapsed = getattr(r, "elapsed", None)
+                    elapsed = elapsed.total_seconds() if elapsed else "N/A"
+                    self._log_debug(
+                        f"Response status: {r.status_code}; elapsed: {elapsed}"
+                    )
                 elif self.provider == "brightdata":
-                    headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
-                    payload = {
-                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",  # Use configurable zone
-                        "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
-                        "format": "raw"
+                    headers = {
+                        "Authorization": f"Bearer {self.key}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
                     }
-                    r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=90)
+                    # Build Google Trends explore URL with Bright Data parsing flags
+                    query_params = {
+                        "q": ",".join(terms),
+                        "hl": "en",
+                        "date": self.timeframe if self.timeframe else "all",
+                        "brd_json": "1",
+                        "brd_trends": "timeseries,geo_map",
+                    }
+                    if self.geo:
+                        query_params["geo"] = self.geo
+                    trends_url = f"https://trends.google.com/trends/explore?{urlencode(query_params)}"
+                    payload = {
+                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",
+                        "url": trends_url,
+                        "method": "GET",
+                        "format": "json",
+                    }
+                    request_endpoint = "https://api.brightdata.com/request"
+                    self._log_debug(f"Request endpoint: {request_endpoint}")
+                    self._log_debug(f"Request payload: {payload}")
+                    r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
+                    elapsed = getattr(r, "elapsed", None)
+                    elapsed = elapsed.total_seconds() if elapsed else "N/A"
+                    self._log_debug(
+                        f"Response status: {r.status_code}; elapsed: {elapsed}"
+                    )
                 elif self.provider == "dataforseo":
                     print("DEBUG: Making DataForSEO API call")
                     self._log_debug("Making DataForSEO API call")
@@ -191,7 +229,7 @@ class TrendsFetcher:
                         "Content-Type": "application/json",
                         "Authorization": auth_header,
                     }
-                    
+
                     # Use robust payload builder for DataForSEO
                     try:
                         # Parse timeframe to extract dates if possible
@@ -200,7 +238,7 @@ class TrendsFetcher:
                             # Try to parse custom timeframe for dates
                             # For now, use default timeframe for safety
                             pass
-                        
+
                         payload_dict = build_dfseo_trends_payload(
                             keywords=terms,
                             start_date=start_date,
@@ -208,16 +246,16 @@ class TrendsFetcher:
                             endpoint="explore",  # Use explore endpoint for time-series
                             # time_range="today 5-y"  # Ensure YoY coverage - REMOVED
                         )
-                        
+
                         # Note: No need to add country_iso_code - it's not supported by explore endpoint
                         # If geo is specified, we could use location_name instead
                         if self.geo:
                             # For now, just log that geo was requested but not supported
                             print(f"DEBUG: Geo '{self.geo}' requested but not supported by explore endpoint")
-                        
+
                         payload = [payload_dict]
                         print(f"DEBUG: DataForSEO payload: {payload}")
-                        
+
                     except Exception as e:
                         print(f"DEBUG: Payload builder error: {e}")
                         # Fallback to simple payload with supported fields only
@@ -227,14 +265,22 @@ class TrendsFetcher:
                         payload = [{
                             "keywords": terms,
                             "date_from": start_date.strftime("%Y-%m-%d"),
-                            "date_to": end_date.strftime("%Y-%m-%d")
+                            "date_to": end_date.strftime("%Y-%m-%d"),
                         }]
-                    
+
+                    request_endpoint = "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live"
+                    self._log_debug(f"Request endpoint: {request_endpoint}")
+                    self._log_debug(f"Request payload: {payload}")
                     r = requests.post(
-                        "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
+                        request_endpoint,
                         headers=dfs_headers,
                         data=json.dumps(payload),
-                        timeout=90,
+                        timeout=60,
+                    )
+                    elapsed = getattr(r, "elapsed", None)
+                    elapsed = elapsed.total_seconds() if elapsed else "N/A"
+                    self._log_debug(
+                        f"Response status: {r.status_code}; elapsed: {elapsed}"
                     )
                 else:
                     raise RuntimeError(f"Unsupported provider: {self.provider}")
@@ -246,13 +292,51 @@ class TrendsFetcher:
                     self._log_debug("X-RateLimit-Remaining", rate)
                 
                 r.raise_for_status()
-                data = r.json()
+                # Capture diagnostics early
+                http_status = r.status_code
+                response_headers = dict(r.headers or {})
+                content_type = response_headers.get("Content-Type", "")
+                text_sample = (getattr(r, "text", "") or "")[:500]
+                
+                # Attempt JSON parse
+                try:
+                    data = r.json()
+                except ValueError as json_err:
+                    # Surface richer error with body sample
+                    raise RuntimeError(
+                        f"JSON parse failed: {json_err}; status={http_status}; content_type={content_type}; body_sample={text_sample}"
+                    )
+
+                # Bright Data `/request` may return a JSON wrapper with the raw body under `body`
+                if self.provider == "brightdata" and isinstance(data, dict) and "body" in data:
+                    inner_body = data.get("body")
+                    inner_sample = str(inner_body)[:300]
+                    if isinstance(inner_body, (dict, list)):
+                        data = inner_body
+                    elif isinstance(inner_body, str):
+                        if inner_body.strip().startswith(("{", "[")):
+                            try:
+                                data = json.loads(inner_body)
+                            except Exception as inner_err:
+                                raise RuntimeError(
+                                    f"Bright Data returned JSON wrapper but inner body is not valid JSON: {inner_err}; inner_sample={inner_sample}"
+                                )
+                        else:
+                            raise RuntimeError(
+                                f"Bright Data returned non-JSON body (likely HTML). Use a JSON-returning endpoint or target a JSON API URL; inner_sample={inner_sample}"
+                            )
                 
                 # Store raw response if collection is enabled
                 if self.collect_raw_responses:
                     response_info = {
                         "batch_terms": terms,
                         "request_params": params,
+                        "provider": self.provider,
+                        "request_endpoint": request_endpoint,
+                        "http_status": http_status,
+                        "response_headers": response_headers,
+                        "content_type": content_type,
+                        "response_text_sample": text_sample,
                         "response_data": data,
                         "timestamp": time.time(),
                         "cache_path": cache_path
@@ -290,19 +374,30 @@ class TrendsFetcher:
                         self._log_debug(f"⚠️ WARNING: SerpAPI overrode timeframe from '{self.timeframe}' to '{search_params['date']}'")
                         
             except requests.exceptions.RequestException as e:
-                msg = f"Network error: {e}; status={getattr(e.response, 'status_code', 'N/A')}"
-                if hasattr(e, 'response') and e.response is not None:
-                    rate = e.response.headers.get("X-RateLimit-Remaining")
-                    if rate is not None:
-                        msg += f"; X-RateLimit-Remaining={rate}"
-                    body = getattr(e.response, "text", "") or ""
-                    msg += f"; body={body[:200]}"
+                # Some request exceptions (e.g., custom mocks) may not populate
+                # ``e.response``. Fall back to the last response ``r`` if available
+                # so callers still see useful diagnostics like status code and
+                # rate-limit headers.
+                logger.error("Request to %s failed: %s", request_endpoint, e)
+                resp = getattr(e, "response", None)
+                if resp is None:
+                    resp = locals().get("r")
+
+                status_code = getattr(resp, "status_code", "N/A")
+                msg = f"Network error: {e}; status={status_code}"
+                if resp is not None:
+                    rate_hdr = resp.headers.get("X-RateLimit-Remaining")
+                    if rate_hdr is not None:
+                        msg += f"; X-RateLimit-Remaining={rate_hdr}"
+                    body = getattr(resp, "text", "") or ""
+                    ctype = resp.headers.get("Content-Type")
+                    msg += f"; content_type={ctype}; body_sample={body[:200]}"
                 raise RuntimeError(msg)
             except Exception as e:
                 msg = f"Unexpected error: {e}; status={status}"
                 if rate is not None:
                     msg += f"; X-RateLimit-Remaining={rate}"
-                msg += f"; body={body[:200]}"
+                msg += f"; body_sample={body[:200]}"
                 raise RuntimeError(msg)
                 
             self._log_debug("Response sample", json.dumps(data)[:200])
@@ -359,15 +454,47 @@ class TrendsFetcher:
                 if self.provider == "serpapi":
                     serp_params = dict(params)
                     serp_params["api_key"] = self.key
-                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=90)
+                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
                 elif self.provider == "brightdata":
-                    headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
+                    headers = {
+                        "Authorization": f"Bearer {self.key}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    }
+                    query_params = {
+                        "q": ",".join(terms),
+                        "hl": "en",
+                        "date": self.timeframe if self.timeframe else "all",
+                        "brd_json": "1",
+                        "brd_trends": "timeseries,geo_map",
+                    }
+                    if self.geo:
+                        query_params["geo"] = self.geo
+                    trends_url = f"https://trends.google.com/trends/explore?{urlencode(query_params)}"
                     payload = {
-                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",  # Use configurable zone
-                        "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
-                        "format": "raw"
+                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",
+                        "url": trends_url,
+                        "method": "GET",
+                        "format": "json"
                     }
                     r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=90)
+                
+                # If we got a Bright Data JSON wrapper here, try to unwrap
+                if self.provider == "brightdata":
+                    try:
+                        bd_data = r.json()
+                        if isinstance(bd_data, dict) and "body" in bd_data:
+                            body_val = bd_data.get("body")
+                            if isinstance(body_val, (dict, list)):
+                                data = body_val
+                            elif isinstance(body_val, str) and body_val.strip().startswith(("{", "[")):
+                                data = json.loads(body_val)
+                            else:
+                                raise RuntimeError("Bright Data returned non-JSON body in alternative format test")
+                        else:
+                            data = bd_data
+                    except Exception as e:
+                        raise
                 else:
                     break
                 r.raise_for_status()
@@ -883,7 +1010,7 @@ def consensus_scale(pairwise: pd.DataFrame, terms: List[str]) -> pd.Series:
     """
     Solve for global log-scales x_i such that exp(x_i - x_j) ~ ratio_ij.
     Weighted least squares on edges with weight n / (1 + MAD).
-    Returns positive scales normalized so max(scale)=1.0 (we'll scale to 100 later).
+    Returns positive scales normalized so max(scale)=1.0 (we’ll scale to 100 later).
     """
     terms = list(dict.fromkeys(terms))
     if pairwise.empty:
@@ -976,7 +1103,8 @@ def stitch_terms(
     debug: bool = False,
     collect_raw_responses: bool = False,
     brightdata_zone: str = None,  # Add this parameter
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame, List[Dict]]:
+    progress_callback=None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Main pipeline:
       - batch fetch
@@ -989,6 +1117,16 @@ def stitch_terms(
     log = logger.info if verbose else logger.debug
     print(f"DEBUG: stitch_terms called with provider: {provider}")
     log("[stitch_terms] Starting with %d terms", len(terms))
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "start",
+                "message": f"Starting stitching for {len(terms)} terms",
+                "total_batches": None,
+                "current_batch": None,
+            })
+        except Exception:
+            pass
 
     fetcher = TrendsFetcher(
         serpapi_key,
@@ -1004,15 +1142,45 @@ def stitch_terms(
     )
     batches = make_batches(terms, group_size=group_size)
     log("[stitch_terms] Created %d batches", len(batches))
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "batching",
+                "message": f"Created {len(batches)} batches",
+                "total_batches": len(batches),
+                "current_batch": 0,
+            })
+        except Exception:
+            pass
 
     frames = []
     for i, batch in enumerate(batches, start=1):
         log("[stitch_terms] Fetching batch %d/%d: %s", i, len(batches), batch)
+        if progress_callback:
+            try:
+                progress_callback({
+                    "stage": "fetch",
+                    "message": f"Fetching batch {i}/{len(batches)}: {', '.join(batch)}",
+                    "total_batches": len(batches),
+                    "current_batch": i,
+                })
+            except Exception:
+                pass
         df = fetcher.fetch_batch(batch)
         df["batch_id"] = f"batch_{i}"
         frames.append(df)
 
     df_long = pd.concat(frames, ignore_index=True)
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "fetched",
+                "message": f"Fetched {len(df_long)} rows across {len(batches)} batches",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     
     # Debug: Check the data before date conversion
     if debug:
@@ -1042,6 +1210,16 @@ def stitch_terms(
 
     # Ratios & scales
     log("[stitch_terms] Computing pairwise ratios")
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "pairwise",
+                "message": "Computing pairwise ratios",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     pw = pairwise_ratios(df_long)
     if pw.empty:
         msg = "No overlapping data found; default scale of 1 used."
@@ -1054,10 +1232,30 @@ def stitch_terms(
     else:
         log("[stitch_terms] %d pairwise ratios computed", len(pw))
     log("[stitch_terms] Computing consensus scale")
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "scaling",
+                "message": "Solving consensus scaling",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     scales = consensus_scale(pw, terms)  # max(scale)=1.0
 
     # Build wide (average across any duplicate points from overlapping batches)
     log("[stitch_terms] Building wide dataframe")
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "wide",
+                "message": "Building wide dataframe",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     all_dates = sorted(df_long["date"].unique())
     
     if debug:
@@ -1098,11 +1296,27 @@ def stitch_terms(
     pair_metrics, term_instability = instability_metrics(samples)
 
     log("[stitch_terms] Done")
-    # Return two extra frames for diagnostics plus raw responses
-    return (wide.reset_index().rename(columns={"index": "date"}),
-            pivot_scores,
-            scales,
-            pair_metrics,
-            term_instability,
-            samples,
-            fetcher.raw_responses)
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "done",
+                "message": "Completed stitching",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
+    # Return diagnostic frames. If raw response collection is enabled,
+    # append those to the output tuple for optional introspection.
+    outputs = (
+        wide.reset_index().rename(columns={"index": "date"}),
+        pivot_scores,
+        scales,
+        pair_metrics,
+        term_instability,
+        samples,
+    )
+    if collect_raw_responses:
+        return (*outputs, fetcher.raw_responses)
+    return outputs
+
