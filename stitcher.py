@@ -118,26 +118,14 @@ class TrendsFetcher:
         self.brightdata_zone = brightdata_zone  # Add this line
         self.raw_responses = []  # Store raw responses for download
 
-    def _log_debug(self, *args, **kwargs) -> None:
-        if not self.debug:
-            return
-        try:  # pragma: no cover - best effort
-            import streamlit as st
-
-            st.write(*args, **kwargs)
-        except Exception:
-            print(*args, **kwargs)
-
     def fetch_batch(self, terms: List[str]) -> pd.DataFrame:
         if len(terms) > 5:
             raise ValueError("Max 5 terms per Trends batch.")
-        print(f"DEBUG: Fetching batch: {terms}, Provider: {self.provider}")
-        self._log_debug(f"Fetching batch: {terms}")
-        self._log_debug(f"Provider: {self.provider}")
+        logger.debug("Fetching batch: %s, Provider: %s", terms, self.provider)
         
         # Try different query formats - SerpAPI might prefer different separators
         q = ",".join(terms)  # comma-separated
-        self._log_debug(f"Query string: {q}")
+        logger.debug("Query string: %s", q)
         
         # Shared request params (provider-specific wiring later)
         params = {
@@ -154,13 +142,13 @@ class TrendsFetcher:
         cache_identity["provider"] = self.provider
         cache_identity["key_fingerprint"] = hashlib.sha256((self.key or "").encode("utf-8")).hexdigest()[:8]
 
-        self._log_debug(f"Full request params (normalized): {cache_identity}")
+        logger.debug("Full request params (normalized): %s", cache_identity)
         
         cache_path = _mk_cache_path(self.cache_dir, cache_identity)
-        self._log_debug("Cache path", cache_path)
+        logger.debug("Cache path %s", cache_path)
         data = _load_cache(cache_path) if self.use_cache else None
         if data is None:
-            self._log_debug("Making API request...")
+            logger.debug("Making API request...")
             status = None
             rate = None
             body = ""
@@ -172,15 +160,28 @@ class TrendsFetcher:
                     serp_params["api_key"] = self.key
                     request_endpoint = "https://serpapi.com/search"
                     sanitized = {k: v for k, v in serp_params.items() if k != "api_key"}
-                    self._log_debug(f"Request endpoint: {request_endpoint}")
-                    self._log_debug(f"Request params: {sanitized}")
+                    logger.debug("Request endpoint: %s", request_endpoint)
+                    logger.debug("Request params: %s", sanitized)
+                    logger.info(
+                        "Provider %s GET %s params=%s",
+                        self.provider,
+                        request_endpoint,
+                        sanitized,
+                    )
                     r = requests.get(request_endpoint, params=serp_params, timeout=60)
                     preview = "\n".join((getattr(r, "text", "") or "").splitlines()[:10])
                     logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)
                     elapsed = elapsed.total_seconds() if elapsed else "N/A"
-                    self._log_debug(
-                        f"Response status: {r.status_code}; elapsed: {elapsed}"
+                    logger.info(
+                        "Provider %s GET %s status=%s elapsed=%s",
+                        self.provider,
+                        request_endpoint,
+                        r.status_code,
+                        elapsed,
+                    )
+                    logger.debug(
+                        "Response status: %s; elapsed: %s", r.status_code, elapsed
                     )
                 elif self.provider == "brightdata":
                     headers = {
@@ -206,19 +207,31 @@ class TrendsFetcher:
                         "format": "json",
                     }
                     request_endpoint = "https://api.brightdata.com/request"
-                    self._log_debug(f"Request endpoint: {request_endpoint}")
-                    self._log_debug(f"Request payload: {payload}")
+                    logger.debug("Request endpoint: %s", request_endpoint)
+                    logger.debug("Request payload: %s", payload)
+                    logger.info(
+                        "Provider %s POST %s payload=%s",
+                        self.provider,
+                        request_endpoint,
+                        payload,
+                    )
                     r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
                     preview = "\n".join((getattr(r, "text", "") or "").splitlines()[:10])
                     logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)
                     elapsed = elapsed.total_seconds() if elapsed else "N/A"
-                    self._log_debug(
-                        f"Response status: {r.status_code}; elapsed: {elapsed}"
+                    logger.info(
+                        "Provider %s POST %s status=%s elapsed=%s",
+                        self.provider,
+                        request_endpoint,
+                        r.status_code,
+                        elapsed,
+                    )
+                    logger.debug(
+                        "Response status: %s; elapsed: %s", r.status_code, elapsed
                     )
                 elif self.provider == "dataforseo":
-                    print("DEBUG: Making DataForSEO API call")
-                    self._log_debug("Making DataForSEO API call")
+                    logger.debug("Making DataForSEO API call")
                     import base64
                     # Support raw "login:password" or already-prefixed Basic token
                     if self.key.strip().lower().startswith("basic "):
@@ -256,13 +269,13 @@ class TrendsFetcher:
                         # If geo is specified, we could use location_name instead
                         if self.geo:
                             # For now, just log that geo was requested but not supported
-                            print(f"DEBUG: Geo '{self.geo}' requested but not supported by explore endpoint")
+                            logger.debug("Geo '%s' requested but not supported by explore endpoint", self.geo)
 
                         payload = [payload_dict]
-                        print(f"DEBUG: DataForSEO payload: {payload}")
+                        logger.debug("DataForSEO payload: %s", payload)
 
                     except Exception as e:
-                        print(f"DEBUG: Payload builder error: {e}")
+                        logger.debug("Payload builder error: %s", e)
                         # Fallback to simple payload with supported fields only
                         from datetime import date, timedelta
                         end_date = date.today()
@@ -274,8 +287,14 @@ class TrendsFetcher:
                         }]
 
                     request_endpoint = "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live"
-                    self._log_debug(f"Request endpoint: {request_endpoint}")
-                    self._log_debug(f"Request payload: {payload}")
+                    logger.debug("Request endpoint: %s", request_endpoint)
+                    logger.debug("Request payload: %s", payload)
+                    logger.info(
+                        "Provider %s POST %s payload=%s",
+                        self.provider,
+                        request_endpoint,
+                        payload,
+                    )
                     r = requests.post(
                         request_endpoint,
                         headers=dfs_headers,
@@ -286,18 +305,24 @@ class TrendsFetcher:
                     logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)
                     elapsed = elapsed.total_seconds() if elapsed else "N/A"
-                    self._log_debug(
-                        f"Response status: {r.status_code}; elapsed: {elapsed}"
+                    logger.info(
+                        "Provider %s POST %s status=%s elapsed=%s",
+                        self.provider,
+                        request_endpoint,
+                        r.status_code,
+                        elapsed,
+                    )
+                    logger.debug(
+                        "Response status: %s; elapsed: %s", r.status_code, elapsed
                     )
                 else:
                     raise RuntimeError(f"Unsupported provider: {self.provider}")
                 status = r.status_code
                 body = getattr(r, "text", "") or ""
-                self._log_debug("HTTP status", status)
+                logger.debug("HTTP status %s", status)
                 rate = r.headers.get("X-RateLimit-Remaining")
                 if rate is not None:
                     self._log_debug("X-RateLimit-Remaining", rate)
-
                 r.raise_for_status()
                 # Capture diagnostics early
                 http_status = r.status_code
@@ -365,21 +390,30 @@ class TrendsFetcher:
                         raise RuntimeError(f"DataForSEO error: {msg}")
                     
                 # Log the response structure for debugging
-                self._log_debug(f"Response keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+                logger.debug(
+                    "Response keys: %s",
+                    list(data.keys()) if isinstance(data, dict) else "Not a dict",
+                )
                 if isinstance(data, dict) and 'interest_over_time' in data:
                     io_data = data['interest_over_time']
-                    self._log_debug(f"interest_over_time type: {type(io_data)}")
+                    logger.debug("interest_over_time type: %s", type(io_data))
                     if isinstance(io_data, dict):
-                        self._log_debug(f"interest_over_time keys: {list(io_data.keys())}")
+                        logger.debug(
+                            "interest_over_time keys: %s", list(io_data.keys())
+                        )
                     elif isinstance(io_data, list) and len(io_data) > 0:
-                        self._log_debug(f"First interest_over_time item: {io_data[0]}")
+                        logger.debug("First interest_over_time item: %s", io_data[0])
                 
                 # Check if SerpAPI overrode our parameters
                 if self.provider == "serpapi" and isinstance(data, dict) and 'search_parameters' in data:
                     search_params = data['search_parameters']
-                    self._log_debug(f"SerpAPI search parameters: {search_params}")
+                    logger.debug("SerpAPI search parameters: %s", search_params)
                     if 'date' in search_params and search_params['date'] != self.timeframe:
-                        self._log_debug(f"⚠️ WARNING: SerpAPI overrode timeframe from '{self.timeframe}' to '{search_params['date']}'")
+                        logger.debug(
+                            "⚠️ WARNING: SerpAPI overrode timeframe from '%s' to '%s'",
+                            self.timeframe,
+                            search_params['date'],
+                        )
                         
             except requests.exceptions.RequestException as e:
                 # Some request exceptions (e.g., custom mocks) may not populate
@@ -408,37 +442,37 @@ class TrendsFetcher:
                 msg += f"; body_sample={body[:200]}"
                 raise RuntimeError(msg)
                 
-            self._log_debug("Response sample", json.dumps(data)[:200])
+            logger.debug("Response sample %s", json.dumps(data)[:200])
             if self.use_cache:
                 try:
                     _save_cache(cache_path, data)
                 except Exception as cache_error:
-                    self._log_debug(f"Cache save failed: {cache_error}")
+                    logger.debug("Cache save failed: %s", cache_error)
             if self.sleep_ms > 0:
                 time.sleep(self.sleep_ms / 1000.0)
         else:
-            self._log_debug("Using cached data", cache_path)
+            logger.debug("Using cached data %s", cache_path)
 
         # Try to parse the response
         try:
             normalized = data
-            print(f"DEBUG: Provider: {self.provider}")
-            self._log_debug(f"Provider: {self.provider}")
+            logger.debug("Provider: %s", self.provider)
             if self.provider == "dataforseo":
-                print("DEBUG: Calling _normalize_dataforseo_payload")
-                self._log_debug("Calling _normalize_dataforseo_payload")
+                logger.debug("Calling _normalize_dataforseo_payload")
                 normalized = self._normalize_dataforseo_payload(data)
-                print(f"DEBUG: Normalized data keys: {list(normalized.keys()) if isinstance(normalized, dict) else 'Not a dict'}")
-                self._log_debug(f"Normalized data keys: {list(normalized.keys()) if isinstance(normalized, dict) else 'Not a dict'}")
+                logger.debug(
+                    "Normalized data keys: %s",
+                    list(normalized.keys()) if isinstance(normalized, dict) else "Not a dict",
+                )
             return self._parse_timeseries(normalized, terms)
         except Exception as parse_error:
-            self._log_debug(f"Initial parsing failed: {parse_error}")
+            logger.debug("Initial parsing failed: %s", parse_error)
             # If parsing failed, try alternative query formats
             return self._try_alternative_query_format(terms)
 
     def _try_alternative_query_format(self, terms: List[str]) -> pd.DataFrame:
         """Try alternative query formats if the main one fails"""
-        self._log_debug("Trying alternative query format...")
+        logger.debug("Trying alternative query format...")
         
         # Try with different separators
         query_formats = [
@@ -449,7 +483,7 @@ class TrendsFetcher:
         
         for q_format in query_formats:
             try:
-                self._log_debug(f"Trying query format: {q_format}")
+                logger.debug("Trying query format: %s", q_format)
                 params = {
                     "engine": "google_trends",
                     "q": q_format,
@@ -511,7 +545,7 @@ class TrendsFetcher:
                 if self.provider == "serpapi":
                     err = data.get("error") or data.get("error_message")
                     if err:
-                        self._log_debug(f"Format {q_format} failed with error: {err}")
+                        logger.debug("Format %s failed with error: %s", q_format, err)
                         continue
                 
                 # Try to parse this response
@@ -520,11 +554,11 @@ class TrendsFetcher:
                     normalized = self._normalize_dataforseo_payload(data)
                 df = self._parse_timeseries(normalized, terms)
                 if not df.empty:
-                    self._log_debug(f"Success with query format: {q_format}")
+                    logger.debug("Success with query format: %s", q_format)
                     return df
                     
             except Exception as e:
-                self._log_debug(f"Format {q_format} failed: {e}")
+                logger.debug("Format %s failed: %s", q_format, e)
                 continue
         
         raise RuntimeError("All query formats failed")
@@ -555,7 +589,7 @@ class TrendsFetcher:
                             rows.append({"date": date_val, "term": term, "value": float(v)})
             return rows
         except Exception as e:
-            print(f"DEBUG: DataForSEO parser error: {e}")
+            logger.debug("DataForSEO parser error: %s", e)
             return []
 
     @staticmethod
@@ -598,10 +632,10 @@ class TrendsFetcher:
 
         if not timeline:
             # Try DataForSEO parser as fallback
-            print("DEBUG: Trying DataForSEO parser as fallback")
+            logger.debug("Trying DataForSEO parser as fallback")
             dataforseo_rows = TrendsFetcher._parse_dataforseo_trends(payload)
             if dataforseo_rows:
-                print(f"DEBUG: DataForSEO parser found {len(dataforseo_rows)} rows")
+                logger.debug("DataForSEO parser found %s rows", len(dataforseo_rows))
                 return pd.DataFrame(dataforseo_rows)
             
             keys = list(payload.keys()) if isinstance(payload, dict) else []
@@ -792,17 +826,22 @@ class TrendsFetcher:
             return payload
         
         # Debug logging
-        self._log_debug(f"DataForSEO payload keys: {list(payload.keys())}")
+        logger.debug("DataForSEO payload keys: %s", list(payload.keys()))
         
         # Handle the new DataForSEO response format with 'items' array
         if "items" in payload and isinstance(payload["items"], list) and payload["items"]:
-            self._log_debug(f"Found items array with {len(payload['items'])} items")
+            logger.debug("Found items array with %s items", len(payload["items"]))
             items = payload["items"]
             for i, item in enumerate(items):
-                self._log_debug(f"Item {i}: {list(item.keys()) if isinstance(item, dict) else type(item)}")
+                logger.debug(
+                    "Item %s: %s", i, list(item.keys()) if isinstance(item, dict) else type(item)
+                )
                 if isinstance(item, dict) and "data" in item:
                     data = item["data"]
-                    self._log_debug(f"Found data array with {len(data) if isinstance(data, list) else 'not a list'} items")
+                    logger.debug(
+                        "Found data array with %s items",
+                        len(data) if isinstance(data, list) else "not a list",
+                    )
                     if isinstance(data, list) and data:
                         # Convert DataForSEO format to timeline_data format
                         timeline_data = []
@@ -810,26 +849,30 @@ class TrendsFetcher:
                             if isinstance(point, dict):
                                 # Convert DataForSEO format to expected format
                                 # Log all available keys in the data point for debugging
-                                self._log_debug(f"Data point keys: {list(point.keys())}")
-                                
+                                logger.debug("Data point keys: %s", list(point.keys()))
+
                                 # Try different possible field names for the value
-                                value = (point.get("value") or 
-                                        point.get("values") or 
-                                        point.get("interest_value") or 
-                                        point.get("interest") or 
-                                        point.get("score") or 
-                                        0)
-                                self._log_debug(f"Found value: {value}")
+                                value = (
+                                    point.get("value")
+                                    or point.get("values")
+                                    or point.get("interest_value")
+                                    or point.get("interest")
+                                    or point.get("score")
+                                    or 0
+                                )
+                                logger.debug("Found value: %s", value)
                                 if not isinstance(value, list):
                                     value = [value]  # Convert single value to array
-                                
+
                                 timeline_point = {
                                     "time": point.get("date_from", ""),
                                     "timestamp": point.get("timestamp", 0),
-                                    "value": value
+                                    "value": value,
                                 }
                                 timeline_data.append(timeline_point)
-                        self._log_debug(f"Created timeline_data with {len(timeline_data)} points")
+                        logger.debug(
+                            "Created timeline_data with %s points", len(timeline_data)
+                        )
                         return {"timeline_data": timeline_data}
         
         # Handle the old DataForSEO response format with 'tasks' array
@@ -1123,7 +1166,7 @@ def stitch_terms(
         and ratio samples for diagnostics.
     """
     log = logger.info if verbose else logger.debug
-    print(f"DEBUG: stitch_terms called with provider: {provider}")
+    logger.debug("stitch_terms called with provider: %s", provider)
     log("[stitch_terms] Starting with %d terms", len(terms))
     if progress_callback:
         try:
