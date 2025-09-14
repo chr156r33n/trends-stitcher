@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import requests
 import logging
+from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 logger.propagate = True
@@ -173,11 +174,22 @@ class TrendsFetcher:
                         "Content-Type": "application/json",
                         "Accept": "application/json",
                     }
+                    # Build Google Trends explore URL with Bright Data parsing flags
+                    query_params = {
+                        "q": ",".join(terms),
+                        "hl": "en",
+                        "date": self.timeframe if self.timeframe else "all",
+                        "brd_json": "1",
+                        "brd_trends": "timeseries,geo_map",
+                    }
+                    if self.geo:
+                        query_params["geo"] = self.geo
+                    trends_url = f"https://trends.google.com/trends/explore?{urlencode(query_params)}"
                     payload = {
-                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",  # Use configurable zone
-                        "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
+                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",
+                        "url": trends_url,
                         "method": "GET",
-                        "format": "json"  # Ask Bright Data to wrap raw response in JSON
+                        "format": "json"
                     }
                     request_endpoint = "https://api.brightdata.com/request"
                     r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
@@ -271,21 +283,23 @@ class TrendsFetcher:
                     )
 
                 # Bright Data `/request` may return a JSON wrapper with the raw body under `body`
-                if self.provider == "brightdata" and isinstance(data, dict) and "body" in data and not (isinstance(data.get("body"), dict) or isinstance(data.get("body"), list)):
-                    inner_body = data.get("body") or ""
+                if self.provider == "brightdata" and isinstance(data, dict) and "body" in data:
+                    inner_body = data.get("body")
                     inner_sample = str(inner_body)[:300]
-                    # If the inner body looks like JSON, try to parse it; otherwise, raise a clearer error
-                    if isinstance(inner_body, str) and inner_body.strip().startswith(("{", "[")):
-                        try:
-                            data = json.loads(inner_body)
-                        except Exception as inner_err:
+                    if isinstance(inner_body, (dict, list)):
+                        data = inner_body
+                    elif isinstance(inner_body, str):
+                        if inner_body.strip().startswith(("{", "[")):
+                            try:
+                                data = json.loads(inner_body)
+                            except Exception as inner_err:
+                                raise RuntimeError(
+                                    f"Bright Data returned JSON wrapper but inner body is not valid JSON: {inner_err}; inner_sample={inner_sample}"
+                                )
+                        else:
                             raise RuntimeError(
-                                f"Bright Data returned JSON wrapper but inner body is not valid JSON: {inner_err}; inner_sample={inner_sample}"
+                                f"Bright Data returned non-JSON body (likely HTML). Use a JSON-returning endpoint or target a JSON API URL; inner_sample={inner_sample}"
                             )
-                    else:
-                        raise RuntimeError(
-                            f"Bright Data returned non-JSON body (likely HTML). Use a JSON-returning endpoint or target a JSON API URL; inner_sample={inner_sample}"
-                        )
                 
                 # Store raw response if collection is enabled
                 if self.collect_raw_responses:
@@ -412,9 +426,19 @@ class TrendsFetcher:
                         "Content-Type": "application/json",
                         "Accept": "application/json",
                     }
+                    query_params = {
+                        "q": ",".join(terms),
+                        "hl": "en",
+                        "date": self.timeframe if self.timeframe else "all",
+                        "brd_json": "1",
+                        "brd_trends": "timeseries,geo_map",
+                    }
+                    if self.geo:
+                        query_params["geo"] = self.geo
+                    trends_url = f"https://trends.google.com/trends/explore?{urlencode(query_params)}"
                     payload = {
-                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",  # Use configurable zone
-                        "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
+                        "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",
+                        "url": trends_url,
                         "method": "GET",
                         "format": "json"
                     }
@@ -424,10 +448,12 @@ class TrendsFetcher:
                 if self.provider == "brightdata":
                     try:
                         bd_data = r.json()
-                        if isinstance(bd_data, dict) and "body" in bd_data and isinstance(bd_data.get("body"), str):
-                            body_str = bd_data.get("body") or ""
-                            if body_str.strip().startswith(("{", "[")):
-                                data = json.loads(body_str)
+                        if isinstance(bd_data, dict) and "body" in bd_data:
+                            body_val = bd_data.get("body")
+                            if isinstance(body_val, (dict, list)):
+                                data = body_val
+                            elif isinstance(body_val, str) and body_val.strip().startswith(("{", "[")):
+                                data = json.loads(body_val)
                             else:
                                 raise RuntimeError("Bright Data returned non-JSON body in alternative format test")
                         else:
