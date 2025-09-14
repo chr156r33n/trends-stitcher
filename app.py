@@ -674,6 +674,10 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     import logging
     logger = logging.getLogger(__name__)
     logger.debug(f"YoY chart for {term}:")
+    print(f"DEBUG: YoY chart for {term}:")
+    print(f"DEBUG:   Total rows: {len(yt)}")
+    print(f"DEBUG:   Date range: {yt[\'date\'].min()} to {yt[\'date\'].max()}")
+    print(f"DEBUG:   Rows with pct_diff: {yt[\'pct_diff\'].notna().sum()}")
     logger.debug(f"  Total rows: {len(yt)}")
     logger.debug(f"  Date range: {yt['date'].min()} to {yt['date'].max()}")
     logger.debug(f"  Rows with pct_diff: {yt['pct_diff'].notna().sum()}")
@@ -685,6 +689,7 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     if yt_valid.empty:
         logger.debug(f"  No valid pct_diff data found")
         return None
+    print(f"DEBUG: No valid pct_diff data found for {term}")
     
     logger.debug(f"  Valid rows: {len(yt_valid)}")
     logger.debug(f"  Valid date range: {yt_valid['date'].min()} to {yt_valid['date'].max()}")
