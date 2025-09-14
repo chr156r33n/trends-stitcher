@@ -1068,6 +1068,7 @@ def stitch_terms(
     debug: bool = False,
     collect_raw_responses: bool = False,
     brightdata_zone: str = None,  # Add this parameter
+    progress_callback=None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame, List[Dict]]:
     """
     Main pipeline:
@@ -1081,6 +1082,16 @@ def stitch_terms(
     log = logger.info if verbose else logger.debug
     print(f"DEBUG: stitch_terms called with provider: {provider}")
     log("[stitch_terms] Starting with %d terms", len(terms))
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "start",
+                "message": f"Starting stitching for {len(terms)} terms",
+                "total_batches": None,
+                "current_batch": None,
+            })
+        except Exception:
+            pass
 
     fetcher = TrendsFetcher(
         serpapi_key,
@@ -1096,15 +1107,45 @@ def stitch_terms(
     )
     batches = make_batches(terms, group_size=group_size)
     log("[stitch_terms] Created %d batches", len(batches))
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "batching",
+                "message": f"Created {len(batches)} batches",
+                "total_batches": len(batches),
+                "current_batch": 0,
+            })
+        except Exception:
+            pass
 
     frames = []
     for i, batch in enumerate(batches, start=1):
         log("[stitch_terms] Fetching batch %d/%d: %s", i, len(batches), batch)
+        if progress_callback:
+            try:
+                progress_callback({
+                    "stage": "fetch",
+                    "message": f"Fetching batch {i}/{len(batches)}: {', '.join(batch)}",
+                    "total_batches": len(batches),
+                    "current_batch": i,
+                })
+            except Exception:
+                pass
         df = fetcher.fetch_batch(batch)
         df["batch_id"] = f"batch_{i}"
         frames.append(df)
 
     df_long = pd.concat(frames, ignore_index=True)
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "fetched",
+                "message": f"Fetched {len(df_long)} rows across {len(batches)} batches",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     
     # Debug: Check the data before date conversion
     if debug:
@@ -1134,6 +1175,16 @@ def stitch_terms(
 
     # Ratios & scales
     log("[stitch_terms] Computing pairwise ratios")
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "pairwise",
+                "message": "Computing pairwise ratios",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     pw = pairwise_ratios(df_long)
     if pw.empty:
         msg = "No overlapping data found; default scale of 1 used."
@@ -1146,10 +1197,30 @@ def stitch_terms(
     else:
         log("[stitch_terms] %d pairwise ratios computed", len(pw))
     log("[stitch_terms] Computing consensus scale")
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "scaling",
+                "message": "Solving consensus scaling",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     scales = consensus_scale(pw, terms)  # max(scale)=1.0
 
     # Build wide (average across any duplicate points from overlapping batches)
     log("[stitch_terms] Building wide dataframe")
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "wide",
+                "message": "Building wide dataframe",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     all_dates = sorted(df_long["date"].unique())
     
     if debug:
@@ -1190,6 +1261,16 @@ def stitch_terms(
     pair_metrics, term_instability = instability_metrics(samples)
 
     log("[stitch_terms] Done")
+    if progress_callback:
+        try:
+            progress_callback({
+                "stage": "done",
+                "message": "Completed stitching",
+                "total_batches": len(batches),
+                "current_batch": len(batches),
+            })
+        except Exception:
+            pass
     # Return two extra frames for diagnostics plus raw responses
     return (wide.reset_index().rename(columns={"index": "date"}),
             pivot_scores,

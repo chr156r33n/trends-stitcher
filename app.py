@@ -986,6 +986,30 @@ if run:
     if should_reload_data(current_params):
         with st.spinner("Fetching, stitching, and preparing views..."):
             try:
+                # Live progress UI
+                progress_bar = st.progress(0)
+                status_placeholder = st.empty()
+
+                def on_progress(evt: dict):
+                    stage = evt.get("stage", "")
+                    msg = evt.get("message", "")
+                    total = evt.get("total_batches") or 0
+                    current = evt.get("current_batch") or 0
+                    # Map stages to rough progress percentages
+                    stage_weights = {
+                        "start": 0,
+                        "batching": 5,
+                        "fetch": 5 + int(70 * (current / max(1, total))) if total else 20,
+                        "fetched": 75,
+                        "pairwise": 82,
+                        "scaling": 88,
+                        "wide": 93,
+                        "done": 100,
+                    }
+                    pct = stage_weights.get(stage, min(99, 5 + int(70 * (current / max(1, total))) if total else 25))
+                    progress_bar.progress(min(100, max(0, pct)))
+                    status_placeholder.info(f"{msg}")
+
                 # Add debug info
                 if show_debug:
                     st.info(f"Starting with {len(terms)} terms: {terms}")
@@ -1009,7 +1033,15 @@ if run:
                     debug=show_debug,
                     collect_raw_responses=collect_raw_responses,
                     brightdata_zone=brightdata_zone,  # Add this line
+                    progress_callback=on_progress,
                 )
+
+                # Ensure progress shows completion
+                try:
+                    progress_bar.progress(100)
+                    status_placeholder.success("Completed stitching")
+                except Exception:
+                    pass
 
                 if show_debug:
                     st.success(f"Successfully fetched data: {df_scaled.shape}")
