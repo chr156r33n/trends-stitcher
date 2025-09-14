@@ -3,12 +3,17 @@ import traceback
 from typing import Tuple
 import logging
 import io
+import os
+import sys
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import altair as alt
 
+# Ensure the local stitcher module is imported even if a similarly named
+# package is installed in the environment.
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from stitcher import stitch_terms
 
 # Custom logging handler for Streamlit
