@@ -3,12 +3,17 @@ import traceback
 from typing import Tuple
 import logging
 import io
+import os
+import sys
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 import altair as alt
 
+# Ensure the local stitcher module is imported even if a similarly named
+# package is installed in the environment.
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from stitcher import stitch_terms
 
 # Custom logging handler for Streamlit
@@ -1019,7 +1024,7 @@ if run:
                     st.info(f"Date filters: {start_date} to {end_date}")
                     st.info(f"Note: API timeframe ({timeframe}) may limit available data regardless of date filters")
                 
-                df_scaled, pivot_scores, scales, pair_metrics, term_instability, ratio_samples, raw_responses = stitch_terms(
+                result = stitch_terms(
                     serpapi_key=serpapi_key,
                     terms=terms,
                     provider=provider,
@@ -1035,6 +1040,27 @@ if run:
                     brightdata_zone=brightdata_zone,  # Add this line
                     progress_callback=on_progress,
                 )
+
+                if collect_raw_responses:
+                    (
+                        df_scaled,
+                        pivot_scores,
+                        scales,
+                        pair_metrics,
+                        term_instability,
+                        ratio_samples,
+                        raw_responses,
+                    ) = result
+                else:
+                    (
+                        df_scaled,
+                        pivot_scores,
+                        scales,
+                        pair_metrics,
+                        term_instability,
+                        ratio_samples,
+                    ) = result
+                    raw_responses = []
 
                 # Ensure progress shows completion
                 try:

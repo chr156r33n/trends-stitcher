@@ -349,13 +349,22 @@ class TrendsFetcher:
                         self._log_debug(f"⚠️ WARNING: SerpAPI overrode timeframe from '{self.timeframe}' to '{search_params['date']}'")
                         
             except requests.exceptions.RequestException as e:
-                msg = f"Network error: {e}; status={getattr(e.response, 'status_code', 'N/A')}"
-                if hasattr(e, 'response') and e.response is not None:
-                    rate = e.response.headers.get("X-RateLimit-Remaining")
-                    if rate is not None:
-                        msg += f"; X-RateLimit-Remaining={rate}"
-                    body = getattr(e.response, "text", "") or ""
-                    ctype = e.response.headers.get("Content-Type")
+                # Some request exceptions (e.g., custom mocks) may not populate
+                # ``e.response``. Fall back to the last response ``r`` if available
+                # so callers still see useful diagnostics like status code and
+                # rate-limit headers.
+                resp = getattr(e, "response", None)
+                if resp is None:
+                    resp = locals().get("r")
+
+                status_code = getattr(resp, "status_code", "N/A")
+                msg = f"Network error: {e}; status={status_code}"
+                if resp is not None:
+                    rate_hdr = resp.headers.get("X-RateLimit-Remaining")
+                    if rate_hdr is not None:
+                        msg += f"; X-RateLimit-Remaining={rate_hdr}"
+                    body = getattr(resp, "text", "") or ""
+                    ctype = resp.headers.get("Content-Type")
                     msg += f"; content_type={ctype}; body_sample={body[:200]}"
                 raise RuntimeError(msg)
             except Exception as e:
@@ -1069,7 +1078,7 @@ def stitch_terms(
     collect_raw_responses: bool = False,
     brightdata_zone: str = None,  # Add this parameter
     progress_callback=None,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame, List[Dict]]:
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Main pipeline:
       - batch fetch
@@ -1271,12 +1280,17 @@ def stitch_terms(
             })
         except Exception:
             pass
-    # Return two extra frames for diagnostics plus raw responses
-    return (wide.reset_index().rename(columns={"index": "date"}),
-            pivot_scores,
-            scales,
-            pair_metrics,
-            term_instability,
-            samples,
-            fetcher.raw_responses)
+    # Return diagnostic frames. If raw response collection is enabled,
+    # append those to the output tuple for optional introspection.
+    outputs = (
+        wide.reset_index().rename(columns={"index": "date"}),
+        pivot_scores,
+        scales,
+        pair_metrics,
+        term_instability,
+        samples,
+    )
+    if collect_raw_responses:
+        return (*outputs, fetcher.raw_responses)
+    return outputs
 
