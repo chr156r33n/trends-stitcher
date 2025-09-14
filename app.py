@@ -465,7 +465,7 @@ def infer_cadence(dates):
 def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     """
     Calculate year-over-year comparison for a given term.
-    Uses 364-day lag with nearest merge for weekly data, tolerance-based matching for others.
+    Uses 365-day lag with nearest merge for weekly data, tolerance-based matching for others.
     """
     # Filter data for the specific term and sort by date
     g = long_df[long_df["term"] == term].sort_values("date").copy()
@@ -488,12 +488,12 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     logger.debug(f"Detected data cadence: {cadence}")
     
     if cadence == "weekly":
-        # Use 364-day lag with nearest merge for weekly data
-        logger.debug("Using 364-day lag approach for weekly data")
+        # Use 365-day lag with nearest merge for weekly data
+        logger.debug("Using 365-day lag approach for weekly data")
         
-        # Create prior year data by shifting forward 364 days (52 weeks)
+        # Create prior year data by shifting forward 365 days (1 year)
         prior_data = g.copy()
-        prior_data["date"] = prior_data["date"] + pd.Timedelta(days=364)
+        prior_data["date"] = prior_data["date"] + pd.Timedelta(days=365)
         prior_data = prior_data.rename(columns={"value": "prior_value"})
         prior_data = prior_data[["date", "prior_value"]]
         
@@ -509,7 +509,7 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
             tolerance=pd.Timedelta(days=4)
         )
         
-        logger.debug(f"364-day lag merge: {len(result)} rows, {result['prior_value'].notna().sum()} matches")
+        logger.debug(f"365-day lag merge: {len(result)} rows, {result['prior_value'].notna().sum()} matches")
         
     else:
         # Use tolerance-based matching for daily/monthly data
