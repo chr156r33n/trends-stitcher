@@ -117,6 +117,11 @@ class TrendsFetcher:
         self.collect_raw_responses = collect_raw_responses
         self.brightdata_zone = brightdata_zone  # Add this line
         self.raw_responses = []  # Store raw responses for download
+        self._log_debug = (
+            getattr(self, "_log_debug", logger.debug)
+            if debug
+            else (lambda *args, **kwargs: None)
+        )
 
     def fetch_batch(self, terms: List[str]) -> pd.DataFrame:
         if len(terms) > 5:
