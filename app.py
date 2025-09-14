@@ -722,7 +722,7 @@ def create_yoy_monthly_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_filtered['year'] = yt_filtered['date'].dt.year
     
-    yt_filtered[\'year_month\'] = yt_filtered[\'date\'].dt.to_period(\'M\').dt.to_timestamp()
+    yt_filtered['year_month'] = yt_filtered['date'].dt.to_period('M').dt.to_timestamp()
     # Create the line chart with zero line
     line_chart = (
         alt.Chart(yt_filtered)
@@ -806,7 +806,7 @@ def create_yoy_absolute_chart(long_df: pd.DataFrame, term: str) -> alt.Chart:
     yt_filtered['month_name'] = yt_filtered['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_filtered['year'] = yt_filtered['date'].dt.year
     
-    yt_filtered[\'year_month\'] = yt_filtered[\'date\'].dt.to_period(\'M\').dt.to_timestamp()
+    yt_filtered['year_month'] = yt_filtered['date'].dt.to_period('M').dt.to_timestamp()
     # Create the line chart with zero line
     line_chart = (
         alt.Chart(yt_filtered)
@@ -866,7 +866,7 @@ def create_yoy_monthly_chart_all_data(long_df: pd.DataFrame, term: str) -> alt.C
     yt_valid['month_name'] = yt_valid['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_valid['year'] = yt_valid['date'].dt.year
     
-    yt_valid[\'year_month\'] = yt_valid[\'date\'].dt.to_period(\'M\').dt.to_timestamp()
+    yt_valid['year_month'] = yt_valid['date'].dt.to_period('M').dt.to_timestamp()
     # Create the chart
     chart = (
         alt.Chart(yt_valid)
@@ -943,7 +943,7 @@ def create_yoy_monthly_chart_debug(long_df: pd.DataFrame, term: str) -> alt.Char
     yt_all['month_name'] = yt_all['date'].dt.strftime('%b')  # Jan, Feb, etc.
     yt_all['year'] = yt_all['date'].dt.year
     
-    yt_all[\'year_month\'] = yt_all[\'date\'].dt.to_period(\'M\').dt.to_timestamp()
+    yt_all['year_month'] = yt_all['date'].dt.to_period('M').dt.to_timestamp()
     # Add a flag for data points with YoY calculations
     yt_all['has_yoy'] = yt_all['pct_diff'].notna()
     
