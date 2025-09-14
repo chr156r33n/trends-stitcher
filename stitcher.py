@@ -161,10 +161,12 @@ class TrendsFetcher:
         if data is None:
             self._log_debug("Making API request...")
             try:
+                request_endpoint = None
                 if self.provider == "serpapi":
                     serp_params = dict(params)
                     serp_params["api_key"] = self.key
-                    r = requests.get("https://serpapi.com/search", params=serp_params, timeout=60)
+                    request_endpoint = "https://serpapi.com/search"
+                    r = requests.get(request_endpoint, params=serp_params, timeout=60)
                 elif self.provider == "brightdata":
                     headers = {"Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
                     payload = {
@@ -172,7 +174,8 @@ class TrendsFetcher:
                         "url": f"https://www.google.com/search?q={'+'.join(terms)}&hl=en&gl=us",
                         "format": "raw"
                     }
-                    r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=60)
+                    request_endpoint = "https://api.brightdata.com/request"
+                    r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
                 elif self.provider == "dataforseo":
                     print("DEBUG: Making DataForSEO API call")
                     self._log_debug("Making DataForSEO API call")
@@ -230,8 +233,9 @@ class TrendsFetcher:
                             "date_to": end_date.strftime("%Y-%m-%d")
                         }]
                     
+                    request_endpoint = "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live"
                     r = requests.post(
-                        "https://api.dataforseo.com/v3/keywords_data/google_trends/explore/live",
+                        request_endpoint,
                         headers=dfs_headers,
                         data=json.dumps(payload),
                         timeout=60,
@@ -246,13 +250,32 @@ class TrendsFetcher:
                     self._log_debug("X-RateLimit-Remaining", rate)
                 
                 r.raise_for_status()
-                data = r.json()
+                # Capture diagnostics early
+                http_status = r.status_code
+                response_headers = dict(r.headers or {})
+                content_type = response_headers.get("Content-Type", "")
+                text_sample = (getattr(r, "text", "") or "")[:500]
+                
+                # Attempt JSON parse
+                try:
+                    data = r.json()
+                except ValueError as json_err:
+                    # Surface richer error with body sample
+                    raise RuntimeError(
+                        f"JSON parse failed: {json_err}; status={http_status}; content_type={content_type}; body_sample={text_sample}"
+                    )
                 
                 # Store raw response if collection is enabled
                 if self.collect_raw_responses:
                     response_info = {
                         "batch_terms": terms,
                         "request_params": params,
+                        "provider": self.provider,
+                        "request_endpoint": request_endpoint,
+                        "http_status": http_status,
+                        "response_headers": response_headers,
+                        "content_type": content_type,
+                        "response_text_sample": text_sample,
                         "response_data": data,
                         "timestamp": time.time(),
                         "cache_path": cache_path
@@ -296,13 +319,14 @@ class TrendsFetcher:
                     if rate is not None:
                         msg += f"; X-RateLimit-Remaining={rate}"
                     body = getattr(e.response, "text", "") or ""
-                    msg += f"; body={body[:200]}"
+                    ctype = e.response.headers.get("Content-Type")
+                    msg += f"; content_type={ctype}; body_sample={body[:200]}"
                 raise RuntimeError(msg)
             except Exception as e:
                 msg = f"Unexpected error: {e}; status={status}"
                 if rate is not None:
                     msg += f"; X-RateLimit-Remaining={rate}"
-                msg += f"; body={body[:200]}"
+                msg += f"; body_sample={body[:200]}"
                 raise RuntimeError(msg)
                 
             self._log_debug("Response sample", json.dumps(data)[:200])
