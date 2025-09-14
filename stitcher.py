@@ -164,6 +164,7 @@ class TrendsFetcher:
             status = None
             rate = None
             body = ""
+            preview = ""
             try:
                 request_endpoint = None
                 if self.provider == "serpapi":
@@ -174,6 +175,8 @@ class TrendsFetcher:
                     self._log_debug(f"Request endpoint: {request_endpoint}")
                     self._log_debug(f"Request params: {sanitized}")
                     r = requests.get(request_endpoint, params=serp_params, timeout=60)
+                    preview = "\n".join((getattr(r, "text", "") or "").splitlines()[:10])
+                    logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)
                     elapsed = elapsed.total_seconds() if elapsed else "N/A"
                     self._log_debug(
@@ -206,6 +209,8 @@ class TrendsFetcher:
                     self._log_debug(f"Request endpoint: {request_endpoint}")
                     self._log_debug(f"Request payload: {payload}")
                     r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
+                    preview = "\n".join((getattr(r, "text", "") or "").splitlines()[:10])
+                    logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)
                     elapsed = elapsed.total_seconds() if elapsed else "N/A"
                     self._log_debug(
@@ -277,6 +282,8 @@ class TrendsFetcher:
                         data=json.dumps(payload),
                         timeout=60,
                     )
+                    preview = "\n".join((getattr(r, "text", "") or "").splitlines()[:10])
+                    logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)
                     elapsed = elapsed.total_seconds() if elapsed else "N/A"
                     self._log_debug(
@@ -290,7 +297,7 @@ class TrendsFetcher:
                 rate = r.headers.get("X-RateLimit-Remaining")
                 if rate is not None:
                     self._log_debug("X-RateLimit-Remaining", rate)
-                
+
                 r.raise_for_status()
                 # Capture diagnostics early
                 http_status = r.status_code
@@ -337,6 +344,7 @@ class TrendsFetcher:
                         "response_headers": response_headers,
                         "content_type": content_type,
                         "response_text_sample": text_sample,
+                        "response_preview": preview,
                         "response_data": data,
                         "timestamp": time.time(),
                         "cache_path": cache_path
