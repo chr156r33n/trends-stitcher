@@ -195,12 +195,14 @@ class TrendsFetcher:
                         "Accept": "application/json",
                     }
                     # Build Google Trends explore URL with Bright Data parsing flags
+                    # Request only the timeseries data (geo_map can slow down or timeout)
                     query_params = {
                         "q": ",".join(terms),
                         "hl": "en",
                         "date": self.timeframe if self.timeframe else "all",
                         "brd_json": "1",
-                        "brd_trends": "timeseries,geo_map",
+                        # Request only timeseries to match working cURL example and avoid timeouts
+                        "brd_trends": "timeseries",
                     }
                     if self.geo:
                         query_params["geo"] = self.geo
@@ -208,8 +210,8 @@ class TrendsFetcher:
                     payload = {
                         "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",
                         "url": trends_url,
-                        "method": "GET",
-                        "format": "json",
+                        # Use raw format to match working cURL example and reduce Bright Data processing
+                        "format": "raw",
                     }
                     request_endpoint = "https://api.brightdata.com/request"
                     logger.debug("Request endpoint: %s", request_endpoint)
@@ -220,7 +222,13 @@ class TrendsFetcher:
                         request_endpoint,
                         payload,
                     )
-                    r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
+                    # Bright Data requests can be slow, so use a generous timeout
+                    r = requests.post(
+                        request_endpoint,
+                        json=payload,
+                        headers=headers,
+                        timeout=180,
+                    )
                     preview = "\n".join((getattr(r, "text", "") or "").splitlines()[:10])
                     logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)
