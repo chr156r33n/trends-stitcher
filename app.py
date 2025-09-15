@@ -42,6 +42,7 @@ def setup_debug_logging():
     # Also suppress the specific Streamlit warning
     import logging
     logging.getLogger("streamlit.runtime.scriptrunner.script_runner").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.scriptrunner.script_run_context").setLevel(logging.ERROR)
     logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
     
     # Suppress urllib3 warnings that can also cause issues
@@ -165,17 +166,19 @@ def explore_autocomplete_options(terms: list, api_key: str):
 
 # If this script is executed with `python app.py` instead of
 # `streamlit run app.py`, re-launch it via the Streamlit CLI so the
-# interactive app works as expected.
-try:  # pragma: no cover - best effort safeguard
-    from streamlit.runtime.scriptrunner_utils import script_run_context
-    if script_run_context.get_script_run_ctx() is None:  # not running via `streamlit run`
-        import sys
-        from streamlit.web import cli as stcli
+# interactive app works as expected. Guard with __main__ so importing app
+# in tests doesn't trigger a Streamlit run.
+if __name__ == "__main__":  # pragma: no cover - import guard
+    try:
+        from streamlit.runtime.scriptrunner_utils import script_run_context
+        if script_run_context.get_script_run_ctx() is None:  # not running via `streamlit run`
+            import sys
+            from streamlit.web import cli as stcli
 
-        sys.argv = ["streamlit", "run", sys.argv[0]]
-        sys.exit(stcli.main())
-except Exception:
-    pass
+            sys.argv = ["streamlit", "run", sys.argv[0]]
+            sys.exit(stcli.main())
+    except Exception:
+        pass
 
 # Initialize session state
 if 'data_loaded' not in st.session_state:
