@@ -222,7 +222,13 @@ class TrendsFetcher:
                         request_endpoint,
                         payload,
                     )
-                    r = requests.post(request_endpoint, json=payload, headers=headers, timeout=60)
+                    # Bright Data requests can be slow, so use a generous timeout
+                    r = requests.post(
+                        request_endpoint,
+                        json=payload,
+                        headers=headers,
+                        timeout=180,
+                    )
                     preview = "\n".join((getattr(r, "text", "") or "").splitlines()[:10])
                     logger.debug(f"Response preview:\n{preview}")
                     elapsed = getattr(r, "elapsed", None)

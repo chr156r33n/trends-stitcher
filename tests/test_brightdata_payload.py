@@ -46,7 +46,9 @@ def test_brightdata_payload(monkeypatch, tmp_path):
         captured["url"] = url
         captured["json"] = json
         captured["headers"] = headers
-        return DummyResponse()
+        codex/fix-bright-data-api-timeouts-in-app-b26meu
+        captured["timeout"] = timeout
+
 
     monkeypatch.setattr("stitcher.requests.post", fake_post)
 
@@ -66,3 +68,4 @@ def test_brightdata_payload(monkeypatch, tmp_path):
     assert "brd_trends=timeseries" in captured["json"]["url"]
     assert "geo_map" not in captured["json"]["url"]
     assert captured["json"]["zone"] == "serp_api6"
+    assert captured["timeout"] == 180
