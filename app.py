@@ -523,7 +523,7 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
         logger.debug(f"Using tolerance-based matching with {tolerance_days} day tolerance")
         
         # Create a more robust previous year lookup with tolerance
-        g["prev_year_date"] = g["date"].apply(lambda x: x.replace(year=x.year - 1))
+        g["prev_year_date"] = g["date"] - pd.DateOffset(years=1)
         
         # For each row, find the closest previous year value within tolerance
         prior_values = []
