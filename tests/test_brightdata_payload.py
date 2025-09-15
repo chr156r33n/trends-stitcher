@@ -46,8 +46,9 @@ def test_brightdata_payload(monkeypatch, tmp_path):
         captured["url"] = url
         captured["json"] = json
         captured["headers"] = headers
+        codex/fix-bright-data-api-timeouts-in-app-b26meu
         captured["timeout"] = timeout
-        return DummyResponse()
+
 
     monkeypatch.setattr("stitcher.requests.post", fake_post)
 
