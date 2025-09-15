@@ -527,9 +527,7 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
         # Use tolerance-based matching for daily/irregular data
         tolerance_days = 3 if cadence == "daily" else 7
         logger.debug(f"Using tolerance-based matching with {tolerance_days} day tolerance")
-
         g["prev_year_date"] = g["date"] - pd.DateOffset(years=1)
-
         prior_values = []
         for _, row in g.iterrows():
             target_date = row["prev_year_date"]
