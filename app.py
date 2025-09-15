@@ -35,6 +35,18 @@ class StreamlitLogHandler(logging.Handler):
 
 # Set up custom logging
 def setup_debug_logging():
+    # Suppress Streamlit ScriptRunContext warnings from background threads
+    import warnings
+    warnings.filterwarnings("ignore", message=".*missing ScriptRunContext.*")
+    
+    # Also suppress the specific Streamlit warning
+    import logging
+    logging.getLogger("streamlit.runtime.scriptrunner.script_runner").setLevel(logging.ERROR)
+    logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
+    
+    # Suppress urllib3 warnings that can also cause issues
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
     # Clear any existing handlers
     logging.getLogger().handlers.clear()
     
