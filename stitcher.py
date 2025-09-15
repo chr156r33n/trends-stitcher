@@ -524,7 +524,7 @@ class TrendsFetcher:
                         "method": "GET",
                         "format": "json"
                     }
-                    r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=90)
+                    r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=190)
                 
                 # If we got a Bright Data JSON wrapper here, try to unwrap
                 if self.provider == "brightdata":
@@ -583,11 +583,19 @@ class TrendsFetcher:
                 for dp in item.get("data", []):
                     date_str = dp.get("date_from") or dp.get("date")
                     ts = dp.get("timestamp")
+                    year = dp.get("year")
+                    month = dp.get("month")
                     date_val = None
-                    if date_str:
+                    if year is not None and month is not None:
+                        try:
+                            date_val = dt.date(int(year), int(month), 1)
+                        except Exception:
+                            date_val = None
+                    elif date_str:
                         date_val = pd.to_datetime(date_str).date()
                     elif ts:
                         date_val = pd.to_datetime(int(ts), unit="s").date()
+
                     values = dp.get("values")
                     if isinstance(values, list) and len(values) == len(kws):
                         for term, v in zip(kws, values):
@@ -869,9 +877,17 @@ class TrendsFetcher:
                                 if not isinstance(value, list):
                                     value = [value]  # Convert single value to array
 
+                                year = point.get("year")
+                                month = point.get("month")
+                                if year is not None and month is not None:
+                                    date_from = f"{int(year):04d}-{int(month):02d}-01"
+                                    timestamp = int(dt.datetime(int(year), int(month), 1).timestamp())
+                                else:
+                                    date_from = point.get("date_from", "")
+                                    timestamp = point.get("timestamp")
                                 timeline_point = {
-                                    "time": point.get("date_from", ""),
-                                    "timestamp": point.get("timestamp", 0),
+                                    "time": date_from,
+                                    "timestamp": timestamp,
                                     "value": value,
                                 }
                                 timeline_data.append(timeline_point)
