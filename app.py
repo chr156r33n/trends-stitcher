@@ -490,68 +490,73 @@ def yoy_table(long_df: pd.DataFrame, term: str) -> pd.DataFrame:
     if cadence == "weekly":
         # Use 365-day lag with nearest merge for weekly data
         logger.debug("Using 365-day lag approach for weekly data")
-        
+
         # Create prior year data by shifting forward 365 days (1 year)
         prior_data = g.copy()
         prior_data["date"] = prior_data["date"] + pd.Timedelta(days=365)
         prior_data = prior_data.rename(columns={"value": "prior_value"})
         prior_data = prior_data[["date", "prior_value"]]
-        
+
         # Merge using merge_asof with tolerance
         g = g.sort_values("date")
         prior_data = prior_data.sort_values("date")
-        
+
         result = pd.merge_asof(
-            g, 
-            prior_data, 
-            on="date", 
-            direction="nearest", 
+            g,
+            prior_data,
+            on="date",
+            direction="nearest",
             tolerance=pd.Timedelta(days=4)
         )
-        
+
         logger.debug(f"365-day lag merge: {len(result)} rows, {result['prior_value'].notna().sum()} matches")
-        
+
+    elif cadence == "monthly":
+        # Month/Year merge for monthly data
+        logger.debug("Using year/month merge for monthly data")
+        g["year"] = g["date"].dt.year
+        g["month"] = g["date"].dt.month
+
+        prior = g[["year", "month", "value"]].copy()
+        prior["year"] = prior["year"] + 1
+        prior = prior.rename(columns={"value": "prior_value"})
+
+        result = pd.merge(g, prior, on=["year", "month"], how="left")
+
     else:
-        # Use tolerance-based matching for daily/monthly data
-        if cadence == "daily":
-            tolerance_days = 3
-        elif cadence == "monthly":
-            tolerance_days = 15
-        else:
-            tolerance_days = 7  # Default
-        
+        # Use tolerance-based matching for daily/irregular data
+        tolerance_days = 3 if cadence == "daily" else 7
         logger.debug(f"Using tolerance-based matching with {tolerance_days} day tolerance")
-        
-        # Create a more robust previous year lookup with tolerance
         g["prev_year_date"] = g["date"] - pd.DateOffset(years=1)
-        
-        # For each row, find the closest previous year value within tolerance
         prior_values = []
         for _, row in g.iterrows():
             target_date = row["prev_year_date"]
             current_date = row["date"]
-            
-            # Find all PREVIOUS YEAR dates within tolerance of the target date
-            # We need to look for dates that are in the previous year
+
             prev_year_data = g[g["date"].dt.year == target_date.year]
             if not prev_year_data.empty:
                 date_diffs = abs((prev_year_data["date"] - target_date).dt.days)
                 within_tolerance = date_diffs <= tolerance_days
-                
+
                 if within_tolerance.any():
-                    # Get the closest match from previous year data
                     closest_idx = date_diffs[within_tolerance].idxmin()
                     prior_value = prev_year_data.loc[closest_idx, "value"]
-                    logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> {prev_year_data.loc[closest_idx, 'date']} = {prior_value}")
+                    logger.debug(
+                        f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> {prev_year_data.loc[closest_idx, 'date']} = {prior_value}"
+                    )
                 else:
                     prior_value = np.nan
-                    logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No match in previous year")
+                    logger.debug(
+                        f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No match in previous year"
+                    )
             else:
                 prior_value = np.nan
-                logger.debug(f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No previous year data")
-            
+                logger.debug(
+                    f"  {current_date} -> {target_date} (tolerance: ±{tolerance_days}d) -> No previous year data"
+                )
+
             prior_values.append(prior_value)
-        
+
         result = g.copy()
         result["prior_value"] = prior_values
     
