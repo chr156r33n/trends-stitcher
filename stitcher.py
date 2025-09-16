@@ -517,11 +517,11 @@ class TrendsFetcher:
                         "Accept": "application/json",
                     }
                     query_params = {
-                        "q": ",".join(terms),
+                        "q": q_format,
                         "hl": "en",
                         "date": self.timeframe if self.timeframe else "all",
                         "brd_json": "1",
-                        "brd_trends": "timeseries,geo_map",
+                        "brd_trends": "timeseries",
                     }
                     if self.geo:
                         query_params["geo"] = self.geo
@@ -529,8 +529,7 @@ class TrendsFetcher:
                     payload = {
                         "zone": self.brightdata_zone or "YOUR_SERP_API_ZONE",
                         "url": trends_url,
-                        "method": "GET",
-                        "format": "json"
+                        "format": "raw",
                     }
                     r = requests.post("https://api.brightdata.com/request", json=payload, headers=headers, timeout=190)
                 
@@ -631,7 +630,7 @@ class TrendsFetcher:
             io = payload.get("interest_over_time", {})
             if isinstance(io, dict):
                 timeline = io.get("timeline_data")
-            
+
             # Path 2: direct timeline_data
             if timeline is None:
                 timeline = payload.get("timeline_data")
@@ -650,6 +649,40 @@ class TrendsFetcher:
                                 timeline = potential
                                 logger.debug(f"Found timeline in key: {key}")
                                 break
+
+            # Path 5: Bright Data raw `widgets` payload
+            if timeline is None:
+                widgets = payload.get("widgets")
+                if isinstance(widgets, list):
+                    for widget in widgets:
+                        if not isinstance(widget, dict):
+                            continue
+                        data_section = widget.get("data")
+                        if not isinstance(data_section, dict):
+                            continue
+
+                        candidates = [data_section]
+                        default_section = data_section.get("default")
+                        if isinstance(default_section, dict):
+                            candidates.append(default_section)
+
+                        for candidate in candidates:
+                            if not isinstance(candidate, dict):
+                                continue
+                            tdata = (
+                                candidate.get("timelineData")
+                                or candidate.get("timeline_data")
+                            )
+                            if isinstance(tdata, list) and tdata:
+                                timeline = tdata
+                                widget_id = widget.get("id") or widget.get("name") or widget.get("title")
+                                logger.debug(
+                                    "Found timeline in Bright Data widget %s",
+                                    widget_id or "<unknown>",
+                                )
+                                break
+                        if timeline is not None:
+                            break
 
         if not timeline:
             # Try DataForSEO parser as fallback
